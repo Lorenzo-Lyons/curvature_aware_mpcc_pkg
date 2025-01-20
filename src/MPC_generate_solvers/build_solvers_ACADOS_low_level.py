@@ -16,7 +16,7 @@ from functions_for_solver_generation import generate_low_level_solver_ocp
 
 
 # select the solver to build MPCC or CAMPCC
-dynamic_model = 'dynamic_bicycle' # 'kinematic_bicycle', 'dynamic_bicycle', 'SVGP'
+dynamic_model = 'kinematic_bicycle' # 'kinematic_bicycle', 'dynamic_bicycle', 'SVGP'
 
 # instantiate the class
 ocp_maker_obj = generate_low_level_solver_ocp(dynamic_model)
@@ -157,7 +157,7 @@ print('')
 
 
 # --- low level solver ---
-solver.options_set('step_length', 0.02)
+#solver.options_set('step_length', 0.02) # use this to reduce the step size
 
 # # set up parameters for each stage
 #solver.options_set('step_length',0.5)
