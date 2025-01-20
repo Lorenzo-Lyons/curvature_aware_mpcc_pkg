@@ -14,7 +14,7 @@ from functions_for_solver_generation import generate_high_level_path_planner_ocp
 
 
 # select the solver to build MPCC or CAMPCC
-MPC_algorithm = 'MPCC' # 'MPCC' or 'CAMPCC'
+MPC_algorithm = 'CAMPCC' # 'MPCC' or 'CAMPCC'
 
 # instantiate the class
 ocp_maker_obj = generate_high_level_path_planner_ocp(MPC_algorithm)
@@ -230,7 +230,7 @@ dt = 1.5 / ocp_maker_obj.N
 axes[2].plot(np.diff(output_array_high_level[:, 4])/dt, color='darkgreen', marker='o',label='s dot')  # Add color and marker to plot()
 # plot first guess
 axes[2].plot(V_target * np.ones(ocp_maker_obj.N), color='gray', linestyle='--',label = 'V target')
-axes[2].set_title('s coordinate')  # Title as plain text
+axes[2].set_title('s dot coordinate')  # Title as plain text
 axes[2].legend()
 # set x-axis label for the last subplot
 axes[2].set_xlabel('solver stage')  # Label for x-axis
