@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<launch>
+<node pkg="curvature_aware_mpcc_pkg" type="safety_toggle.py" name="Safety_node"
+   />
+<node pkg="curvature_aware_mpcc_pkg" type="mpc_node.py" name="mpc_node" output="screen"
+   />
+<node pkg="rqt_reconfigure" type="rqt_reconfigure" name="rqt_reconfigure"
+   />
+
+</launch>

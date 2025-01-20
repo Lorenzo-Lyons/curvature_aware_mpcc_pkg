@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<launch>
+
+<node pkg="rviz" type="rviz" name="rviz_node" args="-d $(find curvature_aware_mpcc_pkg)/rviz_configs/jetracer_visualization_config.rviz" />
+   />
+
+
+</launch>
