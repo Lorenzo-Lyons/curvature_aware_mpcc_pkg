@@ -1,2 +1,2 @@
-src/MPC_generate_solvers/solvers/
+src/MPC_generate_solvers/solvers/*
 src/__pycache__/
