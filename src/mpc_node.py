@@ -158,7 +158,8 @@ class MPCC_controller_class():
         self.delay = 0.04 # communication delay in seconds
 
         # set p contingency if solver does not converge
-        self.last_converged = 0
+        self.last_converged_high = False
+
 
         # define selected solver
         self.set_solver_type(self.solver_software, self.MPC_algorithm, self.dynamic_model)
@@ -277,9 +278,17 @@ class MPCC_controller_class():
 
         if status_high_level != 0:
             print(f"HIGH LEVEL Solver failed with status {status_high_level}")
+            self.last_converged_high = False
         else: # solver success
-            pass
+            if self.last_converged_high == False:
+                print(' ')
+                print(' ----------------- ')
+                print('High level solver recovered from previous failure, now converged')
+                print(' ')
+
+            self.last_converged_high = True
             # extract solution
+
         output_array_high_level = np.zeros((self.high_level_solver_generator_obj.N+1, self.high_level_solver_generator_obj.nu + self.high_level_solver_generator_obj.nx))
         for i in range(self.high_level_solver_generator_obj.N+1):
             if i == self.high_level_solver.N:
@@ -500,6 +509,9 @@ class MPCC_controller_class():
 
 
     def set_up_high_level_solver(self,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length, labels_k):
+        # set smalle oprimization step
+        #self.high_level_solver.options_set('step_length',0.75)
+
 
         # set initial condition
         # x y yaw s ref_x ref_y ref_heading 
@@ -512,14 +524,17 @@ class MPCC_controller_class():
         self.high_level_solver.set(0, "ubx", xinit)
 
         # set up parameters
-        params_i = np.array([V_target, local_path_length, self.q_con, self.q_lag, self.q_u_yaw_rate, self.qt_pos_high, self.qt_rot_high,*labels_k])
+        params_i = np.array([V_target, local_path_length, self.q_con, self.q_lag, self.q_u_yaw_rate, self.qt_pos_high, self.qt_rot_high,self.l_width,*labels_k])
         #params_i = np.array([V_target, local_path_length ,*labels_k])
         for i in range(self.high_level_solver_generator_obj.N+1):
             self.high_level_solver.set(i, "p", params_i)
 
         # produce reference x y and yaw fro the path to use as a first guess
+        # if self.last_converged_high:
+        #     pass # keep previous solution as first guess i.e. warm starting
+        # else:
+        #set up first guess
         X0_array_high_level = self.high_level_solver_generator_obj.produce_X0(self.V_target,local_path_length,labels_k)
-
         # assign frist guess
         for i in range(self.high_level_solver_generator_obj.N):
             self.high_level_solver.set(i, "u", X0_array_high_level[i,:self.high_level_solver_generator_obj.nu])

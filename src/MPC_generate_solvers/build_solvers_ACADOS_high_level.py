@@ -5,13 +5,7 @@ from functions_for_solver_generation import generate_high_level_path_planner_ocp
 
 
 # choose what solver you want to build
-# They differ in how the dynamic constraint and cost function are determined. Standard MPCC has needs lag error
-# penalization, thus has an extra term in cost function. It also tracks velocity. In the dynamic constraint it
-# uses Runge kutta order 4.
-# Large ds uses path progress speed traking In the cost function and doesn't need the lag error. In the dynamic
-# constraint it uses runge kutta for the vehicle dynamics and my formulation for the path progress.
-# Both formulations use a (single) slack variable for the dynamic constraints.
-
+# MPCC is the standard baseline, CAMPCC is our new version  
 
 # select the solver to build MPCC or CAMPCC
 MPC_algorithm = 'CAMPCC' # 'MPCC' or 'CAMPCC'
@@ -53,11 +47,12 @@ print('------------------------------')
 
 V_target = 3
 local_path_length = V_target * ocp_maker_obj.time_horizon * 1.2 # this is how it would be evalauted in the mpc
-q_con_high = 1
-q_lag_high = 1
-q_u_high = 0.01
-qt_pos_high = 5
+q_con_high = 1 
+q_lag_high = 1 
+q_u_high = 0.005 
+qt_pos_high = 5 
 qt_rot_high = 5
+lane_width = 1.0
 
 R = 0.75
 k = -1/R # going right
@@ -66,7 +61,7 @@ labels_k_params = -1/R * np.ones(ocp_maker_obj.n_points_kernelized) # -1.5
 labels_k_params[:10] = 0 # go straight at the beginning
 
 # put all paratemters together
-params_i = np.array([V_target, local_path_length, q_con_high,q_lag_high,q_u_high,qt_pos_high, qt_rot_high,*labels_k_params])
+params_i = np.array([V_target, local_path_length, q_con_high,q_lag_high,q_u_high,qt_pos_high, qt_rot_high,lane_width,*labels_k_params])
 for i in range(ocp_maker_obj.N+1):
     solver.set(i, "p", params_i)
 
@@ -83,11 +78,6 @@ xinit[6] = 0
 solver.set(0, "lbx", xinit)
 solver.set(0, "ubx", xinit)
 
-# # assign control input bounds
-# for k in range(N):
-#         solver.set(k, "lbu", np.array([0,-1,0]))  # Lower bound on u at stage
-#         solver.set(k, "ubu", np.array([1,1,100]))
-
 
 # produce reference x y and yaw fro the path to use as a first guess
 X0_array = ocp_maker_obj.produce_X0(V_target,local_path_length,labels_k_params)
@@ -97,7 +87,6 @@ for i in range(ocp_maker_obj.N):
     solver.set(i, "u", X0_array[i,:ocp_maker_obj.nu])
     solver.set(i, "x", X0_array[i, ocp_maker_obj.nu:])
 solver.set(ocp_maker_obj.N, "x", X0_array[ocp_maker_obj.N, ocp_maker_obj.nu:])
-
 
 
 
@@ -114,17 +103,6 @@ print(f"Total solver time: {total_time:.6f} seconds")
 
 
 
-
-# # Retrieve the state trajectory
-# x_solution = np.zeros((ocp_maker_obj.N+1, ocp_maker_obj.nx))
-# for i in range(ocp_maker_obj.N+1):
-#     x_solution[i, :] = solver.get(i, "x")
-
-# # Retrieve the control trajectory
-# u_solution = np.zeros((ocp_maker_obj.N, ocp_maker_obj.nu))
-# for i in range(ocp_maker_obj.N):
-#     u_solution[i, :] = solver.get(i, "u")
-
 # retrieve solution like mpc node would do it
 output_array_high_level = np.zeros((ocp_maker_obj.N+1, ocp_maker_obj.nu + ocp_maker_obj.nx))
 for i in range(ocp_maker_obj.N+1):
@@ -134,6 +112,7 @@ for i in range(ocp_maker_obj.N+1):
         u_i_solution = solver.get(i, "u")
     x_i_solution = solver.get(i, "x")
     output_array_high_level[i] = np.concatenate((u_i_solution, x_i_solution))
+
 
 
 
@@ -211,9 +190,9 @@ axes[0].set_title('yaw dot')  # Title is plain text
 # plot dashed lines at max_yaw_rate 
 # plot first guess 
 axes[0].plot(X0_array[:-1,0], color='gray',marker='o',markersize=2, label = 'first guess') # skip last value that will not be used
-axes[0].plot(np.ones(ocp_maker_obj.N)*ocp_maker_obj.max_yaw_rate, color='gray', linestyle='--')
-axes[0].plot(np.ones(ocp_maker_obj.N)*-ocp_maker_obj.max_yaw_rate, color='gray', linestyle='--')
-axes[0].set_ylim([-0.1-ocp_maker_obj.max_yaw_rate, ocp_maker_obj.max_yaw_rate + 0.1])
+# axes[0].plot(np.ones(ocp_maker_obj.N)*ocp_maker_obj.max_yaw_rate, color='gray', linestyle='--')
+# axes[0].plot(np.ones(ocp_maker_obj.N)*-ocp_maker_obj.max_yaw_rate, color='gray', linestyle='--')
+# axes[0].set_ylim([-0.1-ocp_maker_obj.max_yaw_rate, ocp_maker_obj.max_yaw_rate + 0.1])
 axes[0].legend()
 
 

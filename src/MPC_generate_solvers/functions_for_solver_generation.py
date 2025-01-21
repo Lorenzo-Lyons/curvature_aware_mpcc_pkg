@@ -21,13 +21,13 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         self.MPC_algorithm = MPC_algorithm
         self.solver_name = 'high_level_reference_generator_' + MPC_algorithm
 
-        self.n_points_kernelized = 41 # number of points in the kernelized path
+        self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
         self.time_horizon = 1.5
         self.N = 15 # stages
-        self.max_yaw_rate = 6 # based on w = V / R = k * V so 2 * V is the maximum yaw rate 
+        self.max_yaw_rate = 10 # based on w = V / R = k * V so 2 * V is the maximum yaw rate 
         self.nx = 7
         self.nu = 1
-        self.n_parameters = 7 + self.n_points_kernelized
+        self.n_parameters = 8 + self.n_points_kernelized
         
     
     def produce_ocp(self):
@@ -66,18 +66,13 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         # unpack parameters
         V_target = model.p[0]
         local_path_length = model.p[1]
-        # the weights can be baked into the cost function
         q_con = model.p[2]
         q_lag = model.p[3]
         q_u = model.p[4]
         qt_pos = model.p[5]
         qt_rot = model.p[6]
-        labels_k = model.p[7:]
-        # q_con = 1
-        # q_lag = 1
-        # q_u = 0.01
-        # qt_pos = 5
-        # qt_rot = 5
+        lane_width = model.p[7]
+        labels_k = model.p[8:]
 
         # evalaute curvature of the path as a function of s
         # n points kernelized is the number of points used to kernelize the path but defined above to get the nparamters right
@@ -97,27 +92,30 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         left_side = K_x_star @ Kxx_inv
         k = left_side @ labels_k
 
-        # define the dynamic constraint
+        # --- define the dynamic constraint ---
+        # "robot" moving at constant speed
         x_dot = V_target * np.cos(yaw)
         y_dot = V_target * np.sin(yaw)
         yaw_dot = u_yaw_dot
-        x_ref_dot = V_target * np.cos(ref_heading) 
-        y_ref_dot = V_target * np.sin(ref_heading)
-        ref_heading_dot = k * V_target
+
         # s_dot definition depending on the selected algorithm
         if self.MPC_algorithm == 'MPCC':
             s_dot = V_target
         else:
-            v_tan = V_target * np.cos(yaw - ref_heading )
+            v_tan = V_target * np.cos(yaw - ref_heading)
             p = (pos_x - ref_x) * np.sin(ref_heading)  + (pos_y - ref_y) * -np.cos(ref_heading)
-            projection_ratio = 1 / (1+p*k)
+
+            projection_ratio = 1 / (1+p*k )
+
             s_dot = v_tan * projection_ratio
 
-
+        x_ref_dot = s_dot * np.cos(ref_heading) 
+        y_ref_dot = s_dot * np.sin(ref_heading)
+        ref_heading_dot = k * s_dot
 
         state_dot = [x_dot,y_dot, yaw_dot, s_dot ,x_ref_dot, y_ref_dot, ref_heading_dot]
-
         model.f_expl_expr = vertcat(*state_dot) # make into vertical vector for casadi
+
 
         # generate optimal control problem
         ocp = AcadosOcp()
@@ -128,19 +126,26 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
         # --- set up the cost function ---
         # stage cost
-        err_lag_squared = ((pos_x - ref_x) *  np.cos(ref_heading)  + (pos_y - ref_y) * np.sin(ref_heading)) ** 2
-        err_lat_squared = ((pos_x - ref_x) * -np.sin(ref_heading) + (pos_y - ref_y) * np.cos(ref_heading)) ** 2
+        if self.MPC_algorithm == 'MPCC':
+            err_lag_squared = ((pos_x - ref_x) *  np.cos(ref_heading)  + (pos_y - ref_y) * np.sin(ref_heading)) ** 2
+            err_lat_squared = ((pos_x - ref_x) * -np.sin(ref_heading) + (pos_y - ref_y) * np.cos(ref_heading)) ** 2
 
-        j = q_con * err_lat_squared +\
-            q_lag * err_lag_squared +\
-            q_u * u_yaw_dot ** 2 
+            j = q_con * err_lat_squared +\
+                     q_lag * err_lag_squared +\
+                     q_u * u_yaw_dot ** 2
+        else:
+            # cost function for CAMPCC
+            # penalize deviation from the path only since the s_dot integration is much more precise
+            err_lat_squared = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
+            j = q_con * err_lat_squared +\
+                     q_u * u_yaw_dot ** 2
 
         # terminal cost
         dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
         misalignment = -dot_direction # incentivise alligning with the path
         # higher penalty costs on v and path tracking, plus an dditional penalty for not alligning with the path at the end
-        j_term =    qt_pos * err_lat_squared +\
-                    qt_pos * err_lag_squared +\
+        err_pos_squared_t = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
+        j_term =    qt_pos * err_pos_squared_t + \
                     qt_rot * misalignment
 
         # asign cost functions
@@ -149,11 +154,22 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
                 
 
         # constraints
-        ocp.constraints.constr_type = 'BGH'
+        #ocp.constraints.constr_type = 'BGH'
         ocp.constraints.idxbu = np.array([0])
         ocp.constraints.lbu = np.array([-self.max_yaw_rate])
         ocp.constraints.ubu = np.array([+self.max_yaw_rate]) 
 
+        # # define lane boundary constraints
+        # h = (pos_x - ref_x)**2  + (pos_y - ref_y)**2
+        # # add constraint on projection ratio
+        # ocp.model.con_h_expr = h  # Define h(x, u)
+        # ocp.constraints.lh = np.array([0.0])  # Lower bound (h_min)
+        # ocp.constraints.uh = np.array([(1/2)**2])  # Upper bound (h_max)
+
+        # # copy for terminal
+        # ocp.constraints.uh_e = ocp.constraints.uh
+        # ocp.constraints.lh_e = ocp.constraints.lh
+        # ocp.model.con_h_expr_e = ocp.model.con_h_expr
 
         # Initial state constraint
         ocp.constraints.x0 = np.zeros(self.nx)  # This is a default value, it will be updated at runtime
@@ -162,6 +178,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         ocp.solver_options.qp_solver = 'FULL_CONDENSING_HPIPM' # FULL_CONDENSING_HPIPM, FULL_CONDENSING_QPOASES FULL_CONDENSING_DAQP
         ocp.solver_options.hessian_approx = 'EXACT' # GAUSS_NEWTON, EXACT
         ocp.solver_options.integrator_type = 'ERK' # IRK, ERK
+        ocp.solver_options.sim_method_num_steps = 1  # Number of sub-steps in each interval for integration purpouses
         ocp.solver_options.nlp_solver_type = 'SQP' # SQP   SQP_RTI
         ocp.solver_options.tf = self.time_horizon  # time horizon in seconds
 

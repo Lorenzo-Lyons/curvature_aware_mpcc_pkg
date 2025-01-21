@@ -1045,12 +1045,7 @@ if __name__ == '__main__':
     # # --- set up track ---
     Checkpoints_x, Checkpoints_y, Checkpoints_s,\
     Checkpoints_k = raw_track(track_choice)
-    # Checkpoints_Rx , Checkpoints_Ry , Checkpoints_Rz,
 
-
-
-
-    # R_x_vals_global_path, R_y_vals_global_path, R_z_vals_global_path, R_x_4_local_path, R_y_4_local_path, R_z_4_local_path,\
     s_vals_global_path, x_vals_global_path, y_vals_global_path, s_4_local_path, x_4_local_path, y_4_local_path,\
     dx_ds, dy_ds, d2x_ds2, d2y_ds2,\
     k_vals_global_path, k_4_local_path = generate_path_data(track_choice)
@@ -1062,6 +1057,27 @@ if __name__ == '__main__':
     plt.plot(x_vals_global_path, y_vals_global_path, 'k',label='raw track 4 local path',linewidth=1)
     plt.axes().set_aspect('equal', 'datalim')
     plt.legend()
+
+
+    # plot curvature and heading angle
+    # evaluate heading angle
+    track_heading_angle_global = np.arctan2(dy_ds, dx_ds)
+
+
+    figure, ax = plt.subplots(2)
+    #plot curvature
+    ax[0].plot(s_4_local_path, k_4_local_path, 'k',label='curvature 4 local path',linewidth=2)
+    # plot heading angle
+    ax[1].plot(s_4_local_path, track_heading_angle_global, 'purple',label='heading angle global path',linewidth=2)
+
+    # set legend title axis labels
+    ax[0].legend()
+    ax[1].legend()
+    ax[0].set(xlabel='s [m]', ylabel='curvature')
+    ax[1].set(xlabel='s [m]', ylabel='heading angle [rad]')
+    ax[0].set_title('Curvature')
+    ax[1].set_title('Heading angle')
+
     plt.show()
 
 
@@ -1069,307 +1085,43 @@ if __name__ == '__main__':
 
 
 
-    # Apply sliding window smoothing
-    window_size = 5  # Choose an odd number for the window size
-    d2x_ds2_smoothed = sliding_window_smooth(d2x_ds2, window_size)
-    d2y_ds2_smoothed = sliding_window_smooth(d2y_ds2, window_size)
-
-
-
-
-
-    # plot in 3D
-    # add option to plot in 3D
-    from mpl_toolkits.mplot3d import Axes3D
-    #dummy vec of zeros
-    z_vals_global_path = np.zeros(len(x_vals_global_path))
-    fig = plt.figure()
-    ax_3d_path = fig.add_subplot(111, projection='3d')
-    ax_3d_path.plot(x_vals_global_path, y_vals_global_path, z_vals_global_path, 'gray',label='global path',linewidth=3)
-    #plot centre of curvature postions
-    ax_3d_path.plot(R_x_vals_global_path, R_y_vals_global_path, R_z_vals_global_path, 'or',label='centre of curvature')
-    ax_3d_path.set_xlabel('X')
-    ax_3d_path.set_ylabel('Y')
-    ax_3d_path.set_zlabel('Z')
-    plt.legend()
-
-    #plot xyz of R as a function of s in 3 subplots
-    fig, axs_R = plt.subplots(3)
-    axs_R[0].plot(s_vals_global_path, R_x_vals_global_path, 'k',label='Rx')
-    axs_R[0].set_ylabel('Rx')
-    axs_R[1].plot(s_vals_global_path, R_y_vals_global_path, 'k',label='Ry')
-    axs_R[1].set_ylabel('Ry')
-    axs_R[2].plot(s_vals_global_path, R_z_vals_global_path, 'k',label='Rz')
-    axs_R[2].set_ylabel('Rz')
-    axs_R[2].set_xlabel('s')
-
-    # # plot smoothed Rx y z
-    # axs_R[0].plot(s_vals_global_path, R_x_vals_global_path_smoothed, 'r',label='Rx smoothed')
-    # axs_R[1].plot(s_vals_global_path, R_y_vals_global_path_smoothed, 'r',label='Ry smoothed')
-    # axs_R[2].plot(s_vals_global_path, R_z_vals_global_path_smoothed, 'r',label='Rz smoothed')
-
-
-
-
-
-
-
-    # evalaute Radius of curvature
-    max_R = 20
-    # R_vec_data = 1 / np.sqrt(dev2_x ** 2 + dev2_y ** 2 + (1/max_R)**2)
-
-    R_vec_data_splines = 1 / np.sqrt(d2x_ds2 ** 2 + d2y_ds2 ** 2 + (1/max_R)**2)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # # generate splines for the track
-    #c_x, c_y, c_dev_x, c_dev_y, c_ddev_x, c_ddev_y = generate_splines_4_forces(s_4_local_path, x_4_local_path, y_4_local_path) # create splines for the track
-
-    # # evaluate interpolation according to the casadi objects
-    # s_plotting = np.linspace(5, 10, 100)
-    # x_plotting = c_x(s_plotting)
-    # y_plotting = c_y(s_plotting)
-
-
-
-    # # plot the track
-    # plt.figure()
-    # plt.plot(x_vals_global_path, y_vals_global_path, 'k',label='global path',linewidth=5)
-    # # plot the track to be used for the local path
-    # plt.plot(x_4_local_path, y_4_local_path, 'or',linestyle='none',label='local path')
-    # # plot the interpolated track
-    # plt.plot(x_plotting, y_plotting, 'gray',linestyle='--',linewidth=3,label='interpolated path')
-
-
-
-    # plt.legend()
-
-    # using chebyshev polynomials
-
-
     # chose sub interval to fit
-    # length_path = 41.11 + 21 # m (full rack length is 41.11m)
-    # start_point = 0 # m
-
     # difficult bend is at 8 m
     start_point = 6 # m
     length_path = 4 # m (full rack length is 41.11m)
 
-
-
-
+    # set kernel parameters
+    alpha = 0.0001**2
     n_points_kernelized = 41 # for full track
-    #n_points_kernelized = 6 # for full track
     length_scale = 1.3/n_points_kernelized #1/n_points_kernelized #4 * 1/n_points_kernelized # length scale is n times the distance between two points
     # was 0.1
 
 
-
-
-
-    cheby_resolution = 100 # just to plot
-    s_cheby = np.linspace(start_point, start_point + length_path, cheby_resolution) 
-
-    # generate data points
-    # cs_scipy_x = CubicSpline(s_4_local_path, x_4_local_path)
-    # cs_scipy_y = CubicSpline(s_4_local_path, y_4_local_path)
-
-    # x_data_points_Cheby_fit = cs_scipy_x(s_cheby)
-    # y_data_points_Cheby_fit = cs_scipy_y(s_cheby)
-
-
+    # extract path interval
     mask = (s_4_local_path >= start_point) & (s_4_local_path <= start_point + length_path)
     # Extract the indexes where the condition is true
     indexes = np.where(mask)[0]
 
-    s_data_points_Cheby_fit = s_4_local_path[indexes]
-    x_data_points_Cheby_fit = x_4_local_path[indexes]
-    y_data_points_Cheby_fit = y_4_local_path[indexes]
+    s_data_points_fit = s_4_local_path[indexes]
+    k_points_fit = k_4_local_path[indexes]
 
-
-    coeffx = np.polynomial.chebyshev.chebfit(s_data_points_Cheby_fit, x_data_points_Cheby_fit, 19)
-    coeffy = np.polynomial.chebyshev.chebfit(s_data_points_Cheby_fit, y_data_points_Cheby_fit, 19)
-
-
-    # re-evaluate path as solver would do it
-    from functions_for_solver_generation import Functions_for_solver_generation
-    fun_4_solver_obj = Functions_for_solver_generation()
-
-
-    x_cheby_custom = np.zeros(cheby_resolution)
-    y_cheby_custom = np.zeros(cheby_resolution)
-
-    # evalaute location of centre of curvature
-    x_R = np.zeros(cheby_resolution)
-    y_R = np.zeros(cheby_resolution)
-    R_vec = np.zeros(cheby_resolution)
-    # colecte 2nd dev data
-    x_Cdev2_cheby_devs = np.zeros(cheby_resolution)
-    y_Cdev2_cheby_devs = np.zeros(cheby_resolution)
-
-    for i in range(cheby_resolution):
-        Cx_out, Cy_out,\
-        x_Cdev_renormalized, y_Cdev_renormalized,\
-        x_Cdev2, y_Cdev2 = fun_4_solver_obj.evalaute_cheby_poly(s_cheby[i],coeffx,coeffy)
-
-        x_cheby_custom[i] = Cx_out
-        y_cheby_custom[i] = Cy_out
-
-        # evalaute location of centre of curvature
-        k_sqrd = x_Cdev2**2 + y_Cdev2**2
-
-        x_R[i] = Cx_out + x_Cdev2 / k_sqrd
-        y_R[i] = Cy_out + y_Cdev2 / k_sqrd
-
-        R_vec[i] = 1/np.sqrt(k_sqrd + 1/max_R**2)
-
-        x_Cdev2_cheby_devs[i] = x_Cdev2
-        y_Cdev2_cheby_devs[i] = y_Cdev2
-
-
-
-    #evaluate the path using built in functions like chebyval
-    x_cheby = np.polynomial.chebyshev.chebval(s_cheby, coeffx)
-    y_cheby = np.polynomial.chebyshev.chebval(s_cheby, coeffy)
-
-
-
-
-    # now evalaute cheby polynomials for the curvature data points
-    coeffx_2 = np.polynomial.chebyshev.chebfit(s_data_points_Cheby_fit, d2x_ds2[indexes], 19)
-    coeffy_2 = np.polynomial.chebyshev.chebfit(s_data_points_Cheby_fit, d2y_ds2[indexes], 19)
-
-    # use the cheby polynomials to evalaute the curvature
-    R_cheby = np.zeros(cheby_resolution)
-    # colect second dev data
-    x_Cdev2_from_coeff2 = np.zeros(cheby_resolution)
-    y_Cdev2_from_coeff2 = np.zeros(cheby_resolution)
-
-
-    for i in range(cheby_resolution):
-        Cx_out, Cy_out,\
-        x_Cdev_renormalized, y_Cdev_renormalized,\
-        x_Cdev2, y_Cdev2 = fun_4_solver_obj.evalaute_cheby_poly(s_cheby[i],coeffx_2,coeffy_2)
-
-        k_sqrd = Cx_out**2 + Cy_out**2
-        R_cheby[i] = 1/np.sqrt(k_sqrd+1/max_R**2)
-
-        x_Cdev2_from_coeff2[i] = Cx_out
-        y_Cdev2_from_coeff2[i] = Cy_out
-
-
-
-    # using kernelized linear regression to approximate the curve
-    from sklearn.kernel_ridge import KernelRidge
-    from sklearn.gaussian_process.kernels import RBF  # Radial Basis Function Kernel
-
+    #x_data_points_fit = x_4_local_path[indexes]
+    #y_data_points_fit = y_4_local_path[indexes]
 
 
     # Fit the model
-    # resample with a lower number of points
+    # resample with the specified number of points for kenerlized regression
 
-
-
-
-    s_4_kernelized = np.linspace(s_data_points_Cheby_fit[0], s_data_points_Cheby_fit[-1], n_points_kernelized)
-
-    x_4_kernelized = np.interp(s_4_kernelized, s_data_points_Cheby_fit, x_data_points_Cheby_fit)
-    y_4_kernelized = np.interp(s_4_kernelized, s_data_points_Cheby_fit, y_data_points_Cheby_fit)
-
-    # resalple first derivative
-    dev_x_kernelized = np.interp(s_4_kernelized, s_data_points_Cheby_fit, dx_ds[indexes])
-    dev_y_kernelized = np.interp(s_4_kernelized, s_data_points_Cheby_fit, dy_ds[indexes])
-
-    # also resample second derivative
-    dev2_x_kernelized = np.interp(s_4_kernelized, s_data_points_Cheby_fit, d2x_ds2[indexes])
-    dev2_y_kernelized = np.interp(s_4_kernelized, s_data_points_Cheby_fit, d2y_ds2[indexes])
-
-    # resample R location
-    R_x_4_kernelized = np.interp(s_4_kernelized, s_data_points_Cheby_fit, R_x_4_local_path[indexes])
-    R_y_4_kernelized = np.interp(s_4_kernelized, s_data_points_Cheby_fit, R_y_4_local_path[indexes])
-    R_z_4_kernelized = np.interp(s_4_kernelized, s_data_points_Cheby_fit, R_z_4_local_path[indexes])
-
-    # resample curvature of teh path
-    k_4_kernelized = np.interp(s_4_kernelized, s_data_points_Cheby_fit, k_4_local_path[indexes])
-
-
-
-    
-    # exapnd dims to fit the model
-    dev2_x_kernelized = np.expand_dims(dev2_x_kernelized,1)
-    dev2_y_kernelized = np.expand_dims(dev2_y_kernelized,1)
-
-    # expand dimensions to fit the model
-    s_4_kernelized = np.expand_dims(s_4_kernelized,1)  
-    x_4_kernelized = np.expand_dims(x_4_kernelized,1)
-    y_4_kernelized = np.expand_dims(y_4_kernelized,1)
-
-
-    # evalaute kernel parameters
-
-    
-    alpha = 0.0001**2
-    kernel = RBF(length_scale=length_scale)  # Radial Basis Function (Gaussian) Kernel
-
-
-    krr_x = KernelRidge(alpha=alpha, kernel=kernel)
-    krr_y = KernelRidge(alpha=alpha, kernel=kernel)
-
-    # now using normalized values
-    s_4_kernelized_normalized = np.linspace(0, 1, n_points_kernelized)
-    # expand dimensions to fit the model
-    s_4_kernelized_normalized = np.expand_dims(s_4_kernelized_normalized,1)
-
-    # normaize between 0 and 1
-    s_4_kernelized_eval = np.expand_dims(s_data_points_Cheby_fit,1)
-    s_4_kernelized_eval_normalized = (s_4_kernelized_eval - s_4_kernelized_eval[0]) / (s_4_kernelized_eval[-1] - s_4_kernelized_eval[0])
-
-
-    krr_x.fit(s_4_kernelized_normalized, x_4_kernelized)
-    krr_y.fit(s_4_kernelized_normalized, y_4_kernelized)
-
-    # Predict the model
-    krr_x_output = np.squeeze(krr_x.predict(s_4_kernelized_eval_normalized))
-    krr_y_output = np.squeeze(krr_y.predict(s_4_kernelized_eval_normalized))
-
-    # now do the same for the second derivatives
-    krr_x_2dev = KernelRidge(alpha=alpha, kernel=kernel)
-    krr_y_2dev = KernelRidge(alpha=alpha, kernel=kernel)
-
-    krr_x_2dev.fit(s_4_kernelized_normalized, dev2_x_kernelized)
-    krr_y_2dev.fit(s_4_kernelized_normalized, dev2_y_kernelized)
-
-    # Predict the model
-    krr_x_output_2dev = np.squeeze(krr_x_2dev.predict(s_4_kernelized_eval_normalized))
-    krr_y_output_2dev = np.squeeze(krr_y_2dev.predict(s_4_kernelized_eval_normalized))
-
-    # evalaute the radius of curvature
-    R_vec_data_krr = 1 / np.sqrt(krr_x_output_2dev ** 2 + krr_y_output_2dev ** 2 + (1/max_R)**2)
-
-
-
+    s_4_kernelized = np.linspace(s_data_points_fit[0], s_data_points_fit[-1], n_points_kernelized)
+    #x_4_kernelized = np.interp(s_4_kernelized, s_data_points_fit, x_data_points_fit)
+    #y_4_kernelized = np.interp(s_4_kernelized, s_data_points_fit, y_data_points_fit)
+    k_4_kernelized = np.interp(s_4_kernelized, s_data_points_fit, k_4_local_path[indexes])
 
 
 
     # --- now evalaute the path using the custom made kernelized linear regression ---
-    #length_scale_path = 1
-    
-    
+    s_4_kernelized_eval_normalized = np.linspace(0, 1, n_points_kernelized)
 
-    #length_scale_path = 0.05  #12 * 1/n_points_kernelized # length scale is n times the distance between two points
     krr_x_output_custom  = kernelized_path(s_4_kernelized_eval_normalized, s_4_kernelized_normalized , x_4_kernelized ,length_scale, alpha)
     krr_y_output_custom  = kernelized_path(s_4_kernelized_eval_normalized, s_4_kernelized_normalized , y_4_kernelized ,length_scale, alpha)
     
@@ -1389,17 +1141,17 @@ if __name__ == '__main__':
     krr_Ry_output_custom  = kernelized_path(s_4_kernelized_eval_normalized, s_4_kernelized_normalized , R_y_4_kernelized ,length_scale, alpha)
     krr_Rz_output_custom  = kernelized_path(s_4_kernelized_eval_normalized, s_4_kernelized_normalized , R_z_4_kernelized ,length_scale, alpha)
 
-    # add kernelized linear regression to the plot
-    axs_R[0].plot(s_data_points_Cheby_fit, krr_Rx_output_custom, 'violet',linestyle = '--',label='kernelized linear regression Rx')
-    axs_R[1].plot(s_data_points_Cheby_fit, krr_Ry_output_custom, 'violet',linestyle = '--',label='kernelized linear regression Ry')
-    axs_R[2].plot(s_data_points_Cheby_fit, krr_Rz_output_custom, 'violet',linestyle = '--',label='kernelized linear regression Rz')
+    # # add kernelized linear regression to the plot
+    # axs_R[0].plot(s_data_points_fit, krr_Rx_output_custom, 'violet',linestyle = '--',label='kernelized linear regression Rx')
+    # axs_R[1].plot(s_data_points_fit, krr_Ry_output_custom, 'violet',linestyle = '--',label='kernelized linear regression Ry')
+    # axs_R[2].plot(s_data_points_fit, krr_Rz_output_custom, 'violet',linestyle = '--',label='kernelized linear regression Rz')
 
-    axs_R[0].legend()
-    axs_R[1].legend()
-    axs_R[2].legend()
+    # axs_R[0].legend()
+    # axs_R[1].legend()
+    # axs_R[2].legend()
 
-    # add plot ocentre of curvature
-    ax_3d_path.plot(krr_Rx_output_custom, krr_Ry_output_custom, krr_Rz_output_custom, 'violet',linestyle = '--',label='centre of curvature kernelized linear regression')
+    # # add plot ocentre of curvature
+    # ax_3d_path.plot(krr_Rx_output_custom, krr_Ry_output_custom, krr_Rz_output_custom, 'violet',linestyle = '--',label='centre of curvature kernelized linear regression')
 
 
 
@@ -1413,7 +1165,7 @@ if __name__ == '__main__':
 
 
     
-    # --- recreat path by integrating the curvature data ---
+    # --- recreate path by integrating the curvature data ---
     discretization = len(k_vec_from_kernelized)
     #ds_for_k_reconstruction = np.linspace(0, 1, len(k_vec_from_kernelized))
     track_heading_vec = np.zeros(len(k_vec_from_kernelized))
@@ -1422,11 +1174,11 @@ if __name__ == '__main__':
 
     # assign initial values
     track_heading_vec[0] = np.arctan2(dy_ds[indexes][0], dx_ds[indexes][-1])
-    track_x_from_heading[0] = x_data_points_Cheby_fit[0]
-    track_y_from_heading[0] = y_data_points_Cheby_fit[0]
+    track_x_from_heading[0] = x_data_points_fit[0]
+    track_y_from_heading[0] = y_data_points_fit[0]
 
     for ii in range(1,discretization):
-        ds = s_data_points_Cheby_fit[ii] - s_data_points_Cheby_fit[ii-1]
+        ds = s_data_points_fit[ii] - s_data_points_fit[ii-1]
         track_heading_vec[ii] = track_heading_vec[ii-1] + k_vec_from_kernelized[ii] * ds 
         track_x_from_heading[ii] = track_x_from_heading[ii-1] + np.cos(track_heading_vec[ii-1]) * ds 
         track_y_from_heading[ii] = track_y_from_heading[ii-1] + np.sin(track_heading_vec[ii-1]) * ds
@@ -1435,7 +1187,7 @@ if __name__ == '__main__':
     # plot the curvature info
     figure, ax = plt.subplots(1)
     ax.plot(s_4_local_path, k_4_local_path, 'k',label='curvature from checkpoints')
-    ax.plot(s_data_points_Cheby_fit, k_vec_from_kernelized, 'violet',label='curvature from kernelized linear regression')
+    ax.plot(s_data_points_fit, k_vec_from_kernelized, 'violet',label='curvature from kernelized linear regression')
     ax.legend()
 
 
@@ -1451,15 +1203,12 @@ if __name__ == '__main__':
     # # plot the original path
     # plt.plot(x_vals_global_path, y_vals_global_path, 'cadetblue',linestyle='--',label='global path raw track',linewidth=3)
 
-    plt.plot(x_cheby, y_cheby, 'orangered',linestyle='-',linewidth=3,label='cheby path')
 
     # plot built in curve
-    plt.plot(x_data_points_Cheby_fit, y_data_points_Cheby_fit, 'k',linestyle='--',linewidth=3,label='data points',zorder = 20,alpha = 0.4)
-
-
+    plt.plot(x_data_points_fit, y_data_points_fit, 'k',linestyle='--',linewidth=3,label='data points',zorder = 20,alpha = 0.4)
 
     # plot custom curve
-    plt.plot(x_cheby_custom, y_cheby_custom, 'purple',linestyle=':',linewidth=3,label='custom cheby path')
+    plt.plot(x_custom, y_custom, 'purple',linestyle=':',linewidth=3,label='custom cheby path')
 
     #plot overall tack
     plt.plot(x_4_local_path, y_4_local_path, 'gray',label='global path',linewidth=5,zorder=0)
@@ -1494,15 +1243,15 @@ if __name__ == '__main__':
 
     #plot norm of first derivatives
     ax[0].plot(s_4_local_path, norm_dev_data, 'k',label='norm of first derivatives from data')
-    ax[0].plot(s_data_points_Cheby_fit, norm_dev__custom_k, 'violet',label='norm of first derivatives from custom kernelized linear regression')
+    ax[0].plot(s_data_points_fit, norm_dev__custom_k, 'violet',label='norm of first derivatives from custom kernelized linear regression')
 
     #plot first derivatives
     ax[1].plot(s_4_local_path, dx_ds, 'k',label='dev_x from data')
     ax[2].plot(s_4_local_path, dy_ds, 'k',label='dev_y from data')
 
     #plot first derivatives custom
-    ax[1].plot(s_data_points_Cheby_fit, krr_x_output_custom_d, 'violet',label='dev_x from custom kernelized linear regression')
-    ax[2].plot(s_data_points_Cheby_fit, krr_y_output_custom_d, 'violet',label='dev_y from custom kernelized linear regression')
+    ax[1].plot(s_data_points_fit, krr_x_output_custom_d, 'violet',label='dev_x from custom kernelized linear regression')
+    ax[2].plot(s_data_points_fit, krr_y_output_custom_d, 'violet',label='dev_y from custom kernelized linear regression')
 
 
 
@@ -1533,13 +1282,13 @@ if __name__ == '__main__':
     ax[0].plot(s_cheby, R_cheby, 'b',label='radius of curvature from cheby separate polynomials for 2nddevs')
 
     # # plot data used to fit the cheby polynomials
-    # ax[0].plot(s_data_points_Cheby_fit, R_vec_data[indexes], 'orange',linestyle = ':',label='data points for cheby fit')
+    # ax[0].plot(s_data_points_fit, R_vec_data[indexes], 'orange',linestyle = ':',label='data points for cheby fit')
 
     # plot kernelized linear regression R
-    ax[0].plot(s_data_points_Cheby_fit, R_vec_data_krr, 'darkgreen',linestyle = '--',label='kernelized linear regression R')
+    ax[0].plot(s_data_points_fit, R_vec_data_krr, 'darkgreen',linestyle = '--',label='kernelized linear regression R')
 
     # plot kernelized linear regression custom R
-    ax[0].plot(s_data_points_Cheby_fit, R_vec_data_krr_custom, 'violet',linestyle = '--',label='kernelized linear regression custom R')
+    ax[0].plot(s_data_points_fit, R_vec_data_krr_custom, 'violet',linestyle = '--',label='kernelized linear regression custom R')
 
 
     ax[0].set_xlabel('s [m]')
@@ -1550,20 +1299,20 @@ if __name__ == '__main__':
     ax[1].plot(s_4_local_path, d2x_ds2, 'k',label='dev2_x from data')
     ax[2].plot(s_4_local_path, d2y_ds2, 'k',label='dev2_y from data')
     # plot the re-evalauted data from cheby
-    ax[1].plot(s_cheby, x_Cdev2_cheby_devs, 'r',label='dev2_x from cheby')
-    ax[2].plot(s_cheby, y_Cdev2_cheby_devs, 'r',label='dev2_y from cheby')
+    ax[1].plot(s_cheby, x_Cdev2_devs, 'r',label='dev2_x from cheby')
+    ax[2].plot(s_cheby, y_Cdev2_devs, 'r',label='dev2_y from cheby')
 
     # plot the re-evalauted data from cheby coeff2
     ax[1].plot(s_cheby, x_Cdev2_from_coeff2, 'b',label='dev2_x from cheby coeff2')
     ax[2].plot(s_cheby, y_Cdev2_from_coeff2, 'b',label='dev2_y from cheby coeff2')
 
     # plot the kernelized linear regression
-    ax[1].plot(s_data_points_Cheby_fit, krr_x_output_2dev, 'g',label='kernelized linear regression dev2_x')
-    ax[2].plot(s_data_points_Cheby_fit, krr_y_output_2dev, 'g',label='kernelized linear regression dev2_y')
+    ax[1].plot(s_data_points_fit, krr_x_output_2dev, 'g',label='kernelized linear regression dev2_x')
+    ax[2].plot(s_data_points_fit, krr_y_output_2dev, 'g',label='kernelized linear regression dev2_y')
 
     # plot the custom kernelized linear regression
-    ax[1].plot(s_data_points_Cheby_fit, krr_x_output_custom_dd, 'violet',linestyle = '--',label='kernelized linear regression custom dev2_x')
-    ax[2].plot(s_data_points_Cheby_fit, krr_y_output_custom_dd, 'violet', linestyle = '--',label='kernelized linear regression custom dev2_y')
+    ax[1].plot(s_data_points_fit, krr_x_output_custom_dd, 'violet',linestyle = '--',label='kernelized linear regression custom dev2_x')
+    ax[2].plot(s_data_points_fit, krr_y_output_custom_dd, 'violet', linestyle = '--',label='kernelized linear regression custom dev2_y')
 
     # # plot smoothed data
     # ax[1].plot(s_4_local_path, d2x_ds2_smoothed, 'orange',label='dev2_x from smoothed data')
