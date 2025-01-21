@@ -26,7 +26,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         self.N = 15 # stages
         self.max_yaw_rate = 10 # based on w = V / R = k * V so 2 * V is the maximum yaw rate 
         self.nx = 7
-        self.nu = 1
+        self.nu = 2
         self.n_parameters = 8 + self.n_points_kernelized
         
     
@@ -55,6 +55,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
         #unpack states
         u_yaw_dot = model.u[0]
+        slack = model.u[1]
         pos_x = model.x[0]
         pos_y = model.x[1]
         yaw = model.x[2]
@@ -138,7 +139,10 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
             # penalize deviation from the path only since the s_dot integration is much more precise
             err_lat_squared = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
             j = q_con * err_lat_squared +\
-                     q_u * u_yaw_dot ** 2
+                q_u * u_yaw_dot ** 2
+
+        # add slack cost
+        j += 100 * slack**2
 
         # terminal cost
         dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
@@ -155,16 +159,16 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
         # constraints
         #ocp.constraints.constr_type = 'BGH'
-        ocp.constraints.idxbu = np.array([0])
-        ocp.constraints.lbu = np.array([-self.max_yaw_rate])
-        ocp.constraints.ubu = np.array([+self.max_yaw_rate]) 
+        ocp.constraints.idxbu = np.array([0,1])
+        ocp.constraints.lbu = np.array([-self.max_yaw_rate,0])
+        ocp.constraints.ubu = np.array([+self.max_yaw_rate,100]) 
 
-        # # define lane boundary constraints
-        # h = (pos_x - ref_x)**2  + (pos_y - ref_y)**2
-        # # add constraint on projection ratio
-        # ocp.model.con_h_expr = h  # Define h(x, u)
-        # ocp.constraints.lh = np.array([0.0])  # Lower bound (h_min)
-        # ocp.constraints.uh = np.array([(1/2)**2])  # Upper bound (h_max)
+        # define lane boundary constraints
+        h = ((lane_width+slack)/2)**2 - ((pos_x - ref_x)**2  + (pos_y - ref_y)**2)  # add constraint on projection ratio
+        # add constraint on projection ratio
+        ocp.model.con_h_expr = h  # Define h(x, u)
+        ocp.constraints.lh = np.array([0.0])  # Lower bound (h_min)
+        ocp.constraints.uh = np.array([1000])  # Upper bound (h_max)
 
         # # copy for terminal
         # ocp.constraints.uh_e = ocp.constraints.uh
@@ -236,13 +240,14 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
         # assign values to the array
         X0_array[:,0] = u_yaw_rate_0
-        X0_array[:,1] = x_ref_0
-        X0_array[:,2] = y_ref_0
-        X0_array[:,3] = ref_heading_0
-        X0_array[:,4] = s_0_vec
-        X0_array[:,5] = x_ref_0
-        X0_array[:,6] = y_ref_0
-        X0_array[:,7] = ref_heading_0
+        X0_array[:,1] = np.zeros(self.N+1) # slack variable should be zero
+        X0_array[:,2] = x_ref_0
+        X0_array[:,3] = y_ref_0
+        X0_array[:,4] = ref_heading_0
+        X0_array[:,5] = s_0_vec
+        X0_array[:,6] = x_ref_0
+        X0_array[:,7] = y_ref_0
+        X0_array[:,8] = ref_heading_0
 
         return X0_array
 

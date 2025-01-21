@@ -49,10 +49,10 @@ V_target = 3
 local_path_length = V_target * ocp_maker_obj.time_horizon * 1.2 # this is how it would be evalauted in the mpc
 q_con_high = 1 
 q_lag_high = 1 
-q_u_high = 0.005 
+q_u_high = 0.01 #0.005 
 qt_pos_high = 5 
 qt_rot_high = 5
-lane_width = 1.0
+lane_width = 0.5
 
 R = 0.75
 k = -1/R # going right
@@ -107,7 +107,7 @@ print(f"Total solver time: {total_time:.6f} seconds")
 output_array_high_level = np.zeros((ocp_maker_obj.N+1, ocp_maker_obj.nu + ocp_maker_obj.nx))
 for i in range(ocp_maker_obj.N+1):
     if i == ocp_maker_obj.N:
-        u_i_solution = np.array([0.0])
+        u_i_solution = np.array([0.0,0.0])
     else:
         u_i_solution = solver.get(i, "u")
     x_i_solution = solver.get(i, "x")
@@ -182,39 +182,39 @@ plt.legend()
 # Assuming u_solution and x_solution are already defined as NumPy arrays
 
 # Create a 3x2 grid of subplots
-fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(12, 12))  # Wider figure for side-by-side layout
+fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(12, 12))  # Wider figure for side-by-side layout
 
 # Plot throttle (top-left subplot)
-axes[0].plot(output_array_high_level[:-1, 0], color='r', marker='o',label='yaw rate input')  # Use color and marker in plot()
-axes[0].set_title('yaw dot')  # Title is plain text
-# plot dashed lines at max_yaw_rate 
-# plot first guess 
-axes[0].plot(X0_array[:-1,0], color='gray',marker='o',markersize=2, label = 'first guess') # skip last value that will not be used
-# axes[0].plot(np.ones(ocp_maker_obj.N)*ocp_maker_obj.max_yaw_rate, color='gray', linestyle='--')
-# axes[0].plot(np.ones(ocp_maker_obj.N)*-ocp_maker_obj.max_yaw_rate, color='gray', linestyle='--')
-# axes[0].set_ylim([-0.1-ocp_maker_obj.max_yaw_rate, ocp_maker_obj.max_yaw_rate + 0.1])
-axes[0].legend()
+axes[0,0].plot(output_array_high_level[:-1, 0], color='r', marker='o',label='yaw rate input')  # Use color and marker in plot()
+axes[0,0].set_title('yaw dot')  # Title is plain text
+axes[0,0].plot(X0_array[:-1,0], color='gray',marker='o',markersize=2, label = 'first guess') # skip last value that will not be used
+axes[0,0].legend()
 
+# slack activation
+axes[1,0].plot(output_array_high_level[:-1, 1], color='darkred', marker='o',label='slack variable')  # Use color and marker in plot()
+axes[1,0].set_title('salck')  # Title is plain text
+axes[1,0].plot(X0_array[:-1,1], color='gray',marker='o',markersize=2, label = 'first guess') # skip last value that will not be used
+axes[1,0].legend()
 
 
 # plot time evolution of the reference theta
-axes[1].plot(output_array_high_level[:, 7], color='b', marker='o',label='heading angle')  # Add color and marker to plot()
+axes[0,1].plot(output_array_high_level[:, 8], color='b', marker='o',label='heading angle')  # Add color and marker to plot()
 # plot first guess
-axes[1].plot(X0_array[:,-1], color='gray',marker='o',markersize=2, label = 'first guess')
-axes[1].set_title('Reference Theta')  # Title as plain text
-axes[1].legend()
+axes[0,1].plot(X0_array[:,-1], color='gray',marker='o',markersize=2, label = 'first guess')
+axes[0,1].set_title('Reference Theta')  # Title as plain text
+axes[0,1].legend()
 
 # add plot of s coordinate over the time
 dt = 1.5 / ocp_maker_obj.N
-axes[2].plot(np.diff(output_array_high_level[:, 4])/dt, color='darkgreen', marker='o',label='s dot')  # Add color and marker to plot()
+axes[1,1].plot(np.diff(output_array_high_level[:, 5])/dt, color='darkgreen', marker='o',label='s dot')  # Add color and marker to plot()
 # plot first guess
-axes[2].plot(V_target * np.ones(ocp_maker_obj.N), color='gray', linestyle='--',label = 'V target')
-axes[2].set_title('s dot coordinate')  # Title as plain text
-axes[2].legend()
+axes[1,1].plot(V_target * np.ones(ocp_maker_obj.N), color='gray', linestyle='--',label = 'V target')
+axes[1,1].set_title('s dot coordinate')  # Title as plain text
+axes[1,1].legend()
 # set x-axis label for the last subplot
-axes[2].set_xlabel('solver stage')  # Label for x-axis
+axes[1,1].set_xlabel('solver stage')  # Label for x-axis
 # set limits on y
-axes[2].set_ylim([0, V_target + 0.5])
+axes[1,1].set_ylim([0, V_target + 0.5])
 
 
 
@@ -222,13 +222,13 @@ axes[2].set_ylim([0, V_target + 0.5])
 
 plt.figure()
 # plot x y trajectory
-plt.plot(output_array_high_level[:, 1], output_array_high_level[:, 2], color='g', marker='o',label = 'trajectory')  # x and y states
+plt.plot(output_array_high_level[:, 2], output_array_high_level[:, 3], color='g', marker='o',label = 'trajectory')  # x and y states
 
 # plot the reference path as it comes out of the solver
 plt.plot(output_array_high_level[:,-3], output_array_high_level[:,-2], label='Path from solver', color='violet',alpha=1,marker='o',markersize=2)
 
 # plot first guess
-plt.plot(X0_array[:,1], X0_array[:,2], color='gray',alpha=0.5,marker='o',markersize=2, label = 'reference first guess')
+plt.plot(X0_array[:,2], X0_array[:,3], color='gray',alpha=0.5,marker='o',markersize=2, label = 'reference first guess')
 
 
 plt.grid(True)
