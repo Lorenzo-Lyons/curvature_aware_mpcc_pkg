@@ -202,8 +202,8 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
     def produce_X0(self,V_target,local_path_length,labels_k_params):
         # Initial guess for state trajectory
         X0_array = np.zeros((self.N+1,self.nu +  self.nx))
-        # z = yaw_dot x y yaw s ref_x ref_y ref_heading
-        #     0       1 2 3   4 5     6     7  
+        # z = yaw_dot slack x y yaw s ref_x ref_y ref_heading
+        #     0       1     2 3 4   5 6     7     8  
 
         # assign initial guess for the states by forward euler integration on th ereference path
 
@@ -612,9 +612,9 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
 
         # assign initial guess for solver
         X0_array[:,0] = throttle_0
-        X0_array[:,3] = output_array_high_level[:,1]
-        X0_array[:,4] = output_array_high_level[:,2]
-        X0_array[:,5] = output_array_high_level[:,3]
+        X0_array[:,3] = output_array_high_level[:,2]
+        X0_array[:,4] = output_array_high_level[:,3]
+        X0_array[:,5] = output_array_high_level[:,4]
         X0_array[:,6] = V_target # assign target speed as first guess 
         X0_array[:,8] = output_array_high_level[:,0] # input of high level is the yaw rate
 

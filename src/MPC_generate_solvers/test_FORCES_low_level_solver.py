@@ -31,7 +31,7 @@ low_level_solver_forces = forcespro.nlp.Solver.from_directory(path_to_solver)
 # load the high level solver
 from acados_template import AcadosOcpSolver
 from functions_for_solver_generation import generate_high_level_path_planner_ocp
-MPC_algorithm = 'CAMPCC' # 'MPCC' or 'CAMPCC'
+MPC_algorithm = 'MPCC' # 'MPCC' or 'CAMPCC'
 high_level_ocp_maker_obj = generate_high_level_path_planner_ocp(MPC_algorithm)
 ocp = high_level_ocp_maker_obj.produce_ocp()
 path_to_high_level_solver = os.path.join(current_script_dir,'solvers/' + high_level_ocp_maker_obj.solver_name) + '/' + high_level_ocp_maker_obj.solver_name
@@ -41,6 +41,12 @@ high_level_solver = AcadosOcpSolver(ocp, json_file=path_to_high_level_solver + '
 
 V_target = 3
 local_path_length = V_target * high_level_ocp_maker_obj.time_horizon * 1.2 # this is how it would be evalauted in the mpc
+q_con_high = 1
+q_lag_high = 1
+q_u_high = 0.01
+qt_pos_high = 5
+qt_rot_high = 5
+lane_width = 2
 R = 0.75
 labels_k_params = -1/R * np.ones(high_level_ocp_maker_obj.n_points_kernelized) # -1.5
 labels_k_params[:10] = 0 # go straight at the beginning
@@ -48,8 +54,8 @@ labels_k_params[:10] = 0 # go straight at the beginning
 
 
 
-# put all paratemters together
-params_i = np.array([V_target, local_path_length ,*labels_k_params])
+# put all parameters together
+params_i = np.array([V_target, local_path_length, q_con_high,q_lag_high,q_u_high,qt_pos_high, qt_rot_high,lane_width,*labels_k_params])
 for i in range(high_level_ocp_maker_obj.N+1):
     high_level_solver.set(i, "p", params_i)
 
@@ -80,7 +86,7 @@ status_high_level = high_level_solver.solve()
 output_array_high_level = np.zeros((high_level_ocp_maker_obj.N+1, high_level_ocp_maker_obj.nu + high_level_ocp_maker_obj.nx))
 for i in range(high_level_solver.N+1):
     if i == high_level_solver.N:
-        u_i_solution = np.array([0.0])
+        u_i_solution = np.array([0.0,0.0])
     else:
         u_i_solution = high_level_solver.get(i, "u")
     x_i_solution = high_level_solver.get(i, "x")
@@ -91,8 +97,8 @@ for i in range(high_level_solver.N+1):
 import matplotlib.pyplot as plt
 fig = plt.figure()
 ax_traj = fig.add_subplot(111)  # Get the current axis
-ax_traj.plot(output_array_high_level[:,5],output_array_high_level[:,6], label='high level solver local path',color='violet',marker='o',markersize=2)
-ax_traj.plot(output_array_high_level[:,1],output_array_high_level[:,2], label='high level solver trajectory',color='darkgreen',marker='o',markersize=2)
+ax_traj.plot(output_array_high_level[:,6],output_array_high_level[:,7], label='high level solver local path',color='violet',marker='o',markersize=2)
+ax_traj.plot(output_array_high_level[:,2],output_array_high_level[:,3], label='high level solver trajectory',color='darkgreen',marker='o',markersize=2)
 ax_traj.set_title('Solver time for different initial conditions')
 ax_traj.set_xlabel('x')
 ax_traj.set_ylabel('x')
@@ -136,9 +142,9 @@ params_base = np.array([V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, slack_
 param_array = np.zeros((low_level_solver_maker_obj.N, low_level_solver_maker_obj.n_parameters))
 # put all parameters together
 for i in range(N):
-    x_ref = output_array_high_level[i,1]
-    y_ref = output_array_high_level[i,2]
-    yaw_ref = output_array_high_level[i,3]
+    x_ref = output_array_high_level[i,2]
+    y_ref = output_array_high_level[i,3]
+    yaw_ref = output_array_high_level[i,4]
     # append ref positions
     param_array[i,:] = np.array([*params_base, x_ref, y_ref, yaw_ref])
 param_array = param_array.ravel() # unpack row-wise

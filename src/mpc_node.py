@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
-from scipy import interpolate, integrate
+import traceback
 from scipy.spatial.transform import Rotation
 import rospy
 import os
@@ -279,6 +279,8 @@ class MPCC_controller_class():
         if status_high_level != 0:
             print(f"HIGH LEVEL Solver failed with status {status_high_level}")
             self.last_converged_high = False
+            # reload the solver to reset parameters
+            self.high_level_solver.reset()
         else: # solver success
             if self.last_converged_high == False:
                 print(' ')
@@ -292,7 +294,7 @@ class MPCC_controller_class():
         output_array_high_level = np.zeros((self.high_level_solver_generator_obj.N+1, self.high_level_solver_generator_obj.nu + self.high_level_solver_generator_obj.nx))
         for i in range(self.high_level_solver_generator_obj.N+1):
             if i == self.high_level_solver.N:
-                u_i_solution = np.array([0.0])
+                u_i_solution = np.array([0.0, 0.0])
             else:
                 u_i_solution = self.high_level_solver.get(i, "u")
             x_i_solution = self.high_level_solver.get(i, "x")
@@ -560,9 +562,9 @@ class MPCC_controller_class():
         param_array = np.zeros((self.low_level_solver_generator_obj.N+1, self.low_level_solver_generator_obj.n_parameters))
         params_base = np.array([V_target, self.q_v, self.q_pos, self.q_rot, self.q_u, self.qt_pos, self.qt_rot, self.slack_p_1, self.q_acc])
         for i in range(self.low_level_solver_generator_obj.N+1):
-            x_ref = output_array_high_level[i,1]
-            y_ref = output_array_high_level[i,2]
-            yaw_ref = output_array_high_level[i,3]
+            x_ref = output_array_high_level[i,2]
+            y_ref = output_array_high_level[i,3]
+            yaw_ref = output_array_high_level[i,4]
             # append ref positions
             param_array[i,:] = np.array([*params_base, x_ref, y_ref, yaw_ref])
         
@@ -742,13 +744,13 @@ class MPCC_controller_class():
         # local path from solver solution
         # u x y yaw s ref_x ref_y ref_heading
         rgba = [255, 0, 255, 0.5]
-        transformed_x, transformed_y = self.rototranslate(output_array_high_level[:,5], output_array_high_level[:,6],x_y_yaw_rototranslation)
+        transformed_x, transformed_y = self.rototranslate(output_array_high_level[:,6], output_array_high_level[:,7],x_y_yaw_rototranslation)
         rviz_local_path_message = self.produce_marker_array_rviz(transformed_x, transformed_y,rgba)
         self.rviz_local_path_publisher.publish(rviz_local_path_message)
 
         # publish high level reference
         rgba = [0, 153, 76, 0.5]
-        transformed_x, transformed_y = self.rototranslate(output_array_high_level[:,1], output_array_high_level[:,2],x_y_yaw_rototranslation)
+        transformed_x, transformed_y = self.rototranslate(output_array_high_level[:,2], output_array_high_level[:,3],x_y_yaw_rototranslation)
         rviz_high_level_reference_message = self.produce_marker_array_rviz(transformed_x, transformed_y,rgba)
         self.rviz_high_level_solution_publisher.publish(rviz_high_level_reference_message)
 
@@ -767,10 +769,10 @@ class MPCC_controller_class():
             V_x_right = (self.l_width/2) * x_Cdev
             V_y_right = (self.l_width/2) * y_Cdev
 
-            x_left_lane_boundary[ii] = output_array_high_level[ii,5] - V_y_left
-            y_left_lane_boundary[ii] = output_array_high_level[ii,6] + V_x_left
-            x_right_lane_boundary[ii] = output_array_high_level[ii,5] + V_y_right
-            y_right_lane_boundary[ii] = output_array_high_level[ii,6] - V_x_right
+            x_left_lane_boundary[ii] = output_array_high_level[ii,6] - V_y_left
+            y_left_lane_boundary[ii] = output_array_high_level[ii,7] + V_x_left
+            x_right_lane_boundary[ii] = output_array_high_level[ii,6] + V_y_right
+            y_right_lane_boundary[ii] = output_array_high_level[ii,7] - V_x_right
 
 
 
@@ -1128,8 +1130,10 @@ if __name__ == '__main__':
                 stop_clock_time = rospy.get_rostime()
                 elapsed_time_global_loop = (stop_clock_time - start_clock_time).to_sec()
                 global_comptime_publisher.publish(elapsed_time_global_loop)
-            except:
-                print('Error in control loop')
+            except Exception as e:
+                print('Error in control loop:')
+                traceback.print_exc()
+
             rate.sleep()
 
 
