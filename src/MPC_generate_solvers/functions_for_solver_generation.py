@@ -1,5 +1,4 @@
 import numpy as np
-import forcespro.nlp
 try:
     from .path_track_definitions import K_RBF_kernel, K_matern2_kernel
 except:
@@ -20,6 +19,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         
         self.MPC_algorithm = MPC_algorithm
         self.solver_name = 'high_level_reference_generator_' + MPC_algorithm
+        self.solver_name_forces = 'high_level_forces_reference_generator_' + MPC_algorithm
 
         self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
         self.time_horizon = 1.5
@@ -31,12 +31,6 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         
     
     def produce_ocp(self):
-
-        try:
-            from path_track_definitions import generate_fixed_path_quantities
-        except:
-            from .path_track_definitions import generate_fixed_path_quantities
-
         from casadi import vertcat, MX
         from acados_template import  AcadosOcp, AcadosModel
 
@@ -54,28 +48,195 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         model.p = p
 
         #unpack states
-        u_yaw_dot = model.u[0]
-        slack = model.u[1]
-        pos_x = model.x[0]
-        pos_y = model.x[1]
-        yaw = model.x[2]
-        s = model.x[3]
-        ref_x = model.x[4] # path reference point x
-        ref_y = model.x[5] # path reference point y
-        ref_heading = model.x[6] # path reference heading
+        u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(vertcat(model.u,model.x))
 
         # unpack parameters
-        V_target = model.p[0]
-        local_path_length = model.p[1]
-        q_con = model.p[2]
-        q_lag = model.p[3]
-        q_u = model.p[4]
-        qt_pos = model.p[5]
-        qt_rot = model.p[6]
-        lane_width = model.p[7]
-        labels_k = model.p[8:]
+        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(model.p)
 
-        # evalaute curvature of the path as a function of s
+        # assign dynamic constraint
+        model.f_expl_expr = vertcat(*self.high_level_planner_continous_dynamics(s,local_path_length,labels_k,V_target,ref_x,ref_y,ref_heading,u_yaw_dot,pos_x,pos_y,yaw)) # make into vertical vector for casadi
+
+
+        # generate optimal control problem
+        ocp = AcadosOcp()
+        ocp.model = model
+        ocp.dims.N = self.N  # number of stages
+        ocp.cost.cost_type = 'EXTERNAL'
+        ocp.cost.cost_type_e = 'EXTERNAL'
+
+        # --- set up the cost functions ---
+        ocp.model.cost_expr_ext_cost  =  self.objective(pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u) 
+        ocp.model.cost_expr_ext_cost_e =  self.objective_terminal_cost(ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot)
+                
+        # constraints
+        #ocp.constraints.constr_type = 'BGH'
+        ocp.constraints.idxbu = np.array([0,1])
+        ocp.constraints.lbu = np.array([-self.max_yaw_rate,0])
+        ocp.constraints.ubu = np.array([+self.max_yaw_rate,100]) 
+
+        # define lane boundary constraints
+        h = ((lane_width+slack)/2)**2 - ((pos_x - ref_x)**2  + (pos_y - ref_y)**2)  # add constraint on projection ratio
+        # add constraint on projection ratio
+        ocp.model.con_h_expr = h  # Define h(x, u)
+        ocp.constraints.lh = np.array([0.0])  # Lower bound (h_min)
+        ocp.constraints.uh = np.array([1000])  # Upper bound (h_max)
+
+        # Initial state constraint
+        ocp.constraints.x0 = np.zeros(self.nx)  # This is a default value, it will be updated at runtime
+
+        # 3. Set solver options
+        ocp.solver_options.qp_solver = 'FULL_CONDENSING_HPIPM' # FULL_CONDENSING_HPIPM, FULL_CONDENSING_QPOASES FULL_CONDENSING_DAQP
+        ocp.solver_options.hessian_approx = 'EXACT' # GAUSS_NEWTON, EXACT
+        ocp.solver_options.integrator_type = 'ERK' # IRK, ERK
+        ocp.solver_options.sim_method_num_steps = 1  # Number of sub-steps in each interval for integration purpouses
+        ocp.solver_options.nlp_solver_type = 'SQP' # SQP   SQP_RTI
+        ocp.solver_options.tf = self.time_horizon  # time horizon in seconds
+
+        # messing with the convergence criteria
+        ocp.solver_options.qp_solver_warm_start = 1 # 0: no warm start, 1: warm start 2 : hot start
+        ocp.solver_options.globalization = 'FIXED_STEP' # 'MERIT_BACKTRACKING', 'FIXED_STEP' # fixed is the default
+        #ocp.solver_options.nlp_solver_max_iter = 20  # Maximum SQP iterations
+        #ocp.solver_options.qp_solver_iter_max = 20
+        ocp.solver_options.print_level = 0 # no print
+        ocp.solver_options.tol = 0.001
+
+        # Initialize parameters with default values (this step is important to avoid dimension mismatch)
+        ocp.parameter_values = np.zeros(self.n_parameters)
+        return ocp
+
+    def produce_FORCES_model_codeoptions(self):
+        import forcespro.nlp
+
+        model = forcespro.nlp.SymbolicModel(self.N)
+
+        model.xinitidx = np.array(range(self.nu,self.nu + self.nx))  # variables in these positions are affected by initial state constraint. (I.e. they cannot change in the first stage)
+        
+        #theese parameters are the same for all the solvers
+        model.nvar = self.nu + self.nx         # number of stage variables
+        model.neq = self.nx                    # number of equality constraints (dynamic model)
+        model.npar = self.n_parameters         # number of parameters
+        model.E = np.concatenate([np.zeros((self.nx, self.nu)), np.eye(self.nx)], axis=1)  # This extraction matrix tells forces what variables are states and what are inputs
+
+        # set fixed input bounds since they will not change at runtime
+        # generate inf upper and lower bounds for the states
+        model.lb = np.array([-self.max_yaw_rate, -1000, -1000, -1000,-1000,-1000,-1000,-1000,-1000])  # lower bound on inputs
+        model.ub = np.array([+self.max_yaw_rate, +1000, +1000, +1000,+1000,+1000,+1000,+1000,+1000])  # upper bound on inputs
+
+        # Set objective
+        for i in range(self.N - 1):
+            model.objective[i] = self.objective_forces  # eval_obj is a Python function
+        model.objective[self.N-1] = self.objective_terminal_forces
+  
+        # Set dynamic constraint
+        model.continuous_dynamics = self.high_level_planner_continous_dynamics_forces
+
+        # Set non linear constraints
+        model.nh = 0
+        model.hu = np.array([])
+        model.hl = np.array([])
+
+
+        # Define solver options
+        codeoptions = forcespro.CodeOptions('FORCESNLPsolver') #get standard options
+        # continuous dynamics options
+        codeoptions.nlp.integrator.type = 'ERK4'
+        codeoptions.nlp.integrator.Ts = self.time_horizon / self.N
+        codeoptions.nlp.integrator.nodes = 5 # intermediate nodes for the integrator
+
+        codeoptions.name = self.solver_name_forces
+        codeoptions.printlevel = 0  #  1: summary line after each solve,   0: no prit
+        codeoptions.BuildSimulinkBlock = 0  # disable simulink block generation because we don't need it
+        codeoptions.maxit = 200  # maximum iterations
+        codeoptions.noVariableElimination = 1  # enable or disable variable simplification (like if first stage is constrained)
+        codeoptions.nlp.stack_parambounds = True  # determines if the parameters can simply be stacked (but not sure exactly what it does)
+
+        # set tolerances
+        # codeoptions.nlp.TolStat = 1e-4  # inf norm tol. on stationarity
+        # codeoptions.nlp.TolEq = 1e-5  # tol. on equality constraints
+        # codeoptions.nlp.TolIneq = 1e-5  # tol. on inequality constraints
+        # codeoptions.nlp.TolComp = 1e-5  # tol. on complementarity
+
+        # set warm start behaviour for dual variables (so always warm start from solver perspective, even if in practice you give it a vector of zeros)
+        codeoptions.init = 2  # 0 cold, 1 centered, 2 warm
+
+        #set overwrite behviour
+        codeoptions.overwrite = 1 # 0 never, 1 always, 2 (Defaul) ask
+
+        codeoptions.solvemethod = 'PDIP_NLP' # 'PDIP_NLP' # changing to non linear primal dual method  'SQP_NLP'
+        return model,codeoptions
+
+    def unpack_state(self,z):
+        u_yaw_dot = z[0]
+        slack = z[1]
+        pos_x = z[2]
+        pos_y = z[3]
+        yaw =   z[4]
+        s =     z[5]
+        ref_x = z[6]       # path reference point x
+        ref_y = z[7]       # path reference point y
+        ref_heading = z[8] # path reference heading
+        return u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading
+
+    def unpack_parameters(self,p):
+        V_target = p[0]
+        local_path_length = p[1]
+        q_con = p[2]
+        q_lag = p[3]
+        q_u = p[4]
+        qt_pos = p[5]
+        qt_rot = p[6]
+        lane_width = p[7]
+        labels_k = p[8:]
+        return V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k
+    
+
+    def objective(self,pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u):
+        # stage cost
+        if self.MPC_algorithm == 'MPCC':
+            err_lag_squared = ((pos_x - ref_x) *  np.cos(ref_heading)  + (pos_y - ref_y) * np.sin(ref_heading)) ** 2
+            err_lat_squared = ((pos_x - ref_x) * -np.sin(ref_heading) + (pos_y - ref_y) * np.cos(ref_heading)) ** 2
+
+            j = q_con * err_lat_squared +\
+                     q_lag * err_lag_squared +\
+                     q_u * u_yaw_dot ** 2
+        else:
+            # cost function for CAMPCC
+            # penalize deviation from the path only since the s_dot integration is much more precise
+            err_lat_squared = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
+            j = q_con * err_lat_squared +\
+                q_u * u_yaw_dot ** 2
+
+        # add slack cost
+        j += 100 * slack**2
+        return j
+    
+    def objective_forces(self, z, p):
+        u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(z)
+        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(p)
+        return self.objective(pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u)
+
+    def objective_terminal_cost(self, ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot):
+        # terminal cost
+        dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
+        misalignment = -dot_direction # incentivise alligning with the path
+        # higher penalty costs on v and path tracking, plus an dditional penalty for not alligning with the path at the end
+        err_pos_squared_t = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
+        j_term =    qt_pos * err_pos_squared_t + \
+                    qt_rot * misalignment
+        return j_term
+    
+    def objective_terminal_forces(self, z, p):
+        u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(z)
+        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(p)
+        return self.objective_terminal_cost(ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot)
+
+
+    def high_level_planner_continous_dynamics(self,s,local_path_length,labels_k,V_target,ref_x,ref_y,ref_heading,u_yaw_dot,pos_x,pos_y,yaw):
+        try:
+            from path_track_definitions import generate_fixed_path_quantities
+        except:
+            from .path_track_definitions import generate_fixed_path_quantities
+                # evalaute curvature of the path as a function of s
         # n points kernelized is the number of points used to kernelize the path but defined above to get the nparamters right
         path_lengthscale = 1.3/self.n_points_kernelized
         lambda_val = 0.0001**2
@@ -115,89 +276,19 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         ref_heading_dot = k * s_dot
 
         state_dot = [x_dot,y_dot, yaw_dot, s_dot ,x_ref_dot, y_ref_dot, ref_heading_dot]
-        model.f_expl_expr = vertcat(*state_dot) # make into vertical vector for casadi
-
-
-        # generate optimal control problem
-        ocp = AcadosOcp()
-        ocp.model = model
-        ocp.dims.N = self.N  # number of stages
-        ocp.cost.cost_type = 'EXTERNAL'
-        ocp.cost.cost_type_e = 'EXTERNAL'
-
-        # --- set up the cost function ---
-        # stage cost
-        if self.MPC_algorithm == 'MPCC':
-            err_lag_squared = ((pos_x - ref_x) *  np.cos(ref_heading)  + (pos_y - ref_y) * np.sin(ref_heading)) ** 2
-            err_lat_squared = ((pos_x - ref_x) * -np.sin(ref_heading) + (pos_y - ref_y) * np.cos(ref_heading)) ** 2
-
-            j = q_con * err_lat_squared +\
-                     q_lag * err_lag_squared +\
-                     q_u * u_yaw_dot ** 2
-        else:
-            # cost function for CAMPCC
-            # penalize deviation from the path only since the s_dot integration is much more precise
-            err_lat_squared = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
-            j = q_con * err_lat_squared +\
-                q_u * u_yaw_dot ** 2
-
-        # add slack cost
-        j += 100 * slack**2
-
-        # terminal cost
-        dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
-        misalignment = -dot_direction # incentivise alligning with the path
-        # higher penalty costs on v and path tracking, plus an dditional penalty for not alligning with the path at the end
-        err_pos_squared_t = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
-        j_term =    qt_pos * err_pos_squared_t + \
-                    qt_rot * misalignment
-
-        # asign cost functions
-        ocp.model.cost_expr_ext_cost  =  j 
-        ocp.model.cost_expr_ext_cost_e =  j_term
-                
-
-        # constraints
-        #ocp.constraints.constr_type = 'BGH'
-        ocp.constraints.idxbu = np.array([0,1])
-        ocp.constraints.lbu = np.array([-self.max_yaw_rate,0])
-        ocp.constraints.ubu = np.array([+self.max_yaw_rate,100]) 
-
-        # define lane boundary constraints
-        h = ((lane_width+slack)/2)**2 - ((pos_x - ref_x)**2  + (pos_y - ref_y)**2)  # add constraint on projection ratio
-        # add constraint on projection ratio
-        ocp.model.con_h_expr = h  # Define h(x, u)
-        ocp.constraints.lh = np.array([0.0])  # Lower bound (h_min)
-        ocp.constraints.uh = np.array([1000])  # Upper bound (h_max)
-
-        # # copy for terminal
-        # ocp.constraints.uh_e = ocp.constraints.uh
-        # ocp.constraints.lh_e = ocp.constraints.lh
-        # ocp.model.con_h_expr_e = ocp.model.con_h_expr
-
-        # Initial state constraint
-        ocp.constraints.x0 = np.zeros(self.nx)  # This is a default value, it will be updated at runtime
-
-        # 3. Set solver options
-        ocp.solver_options.qp_solver = 'FULL_CONDENSING_HPIPM' # FULL_CONDENSING_HPIPM, FULL_CONDENSING_QPOASES FULL_CONDENSING_DAQP
-        ocp.solver_options.hessian_approx = 'EXACT' # GAUSS_NEWTON, EXACT
-        ocp.solver_options.integrator_type = 'ERK' # IRK, ERK
-        ocp.solver_options.sim_method_num_steps = 1  # Number of sub-steps in each interval for integration purpouses
-        ocp.solver_options.nlp_solver_type = 'SQP' # SQP   SQP_RTI
-        ocp.solver_options.tf = self.time_horizon  # time horizon in seconds
-
-        # messing with the convergence criteria
-        ocp.solver_options.qp_solver_warm_start = 1 # 0: no warm start, 1: warm start 2 : hot start
-        ocp.solver_options.globalization = 'FIXED_STEP' # 'MERIT_BACKTRACKING', 'FIXED_STEP' # fixed is the default
-        #ocp.solver_options.nlp_solver_max_iter = 20  # Maximum SQP iterations
-        #ocp.solver_options.qp_solver_iter_max = 20
-        ocp.solver_options.print_level = 0 # no print
-        ocp.solver_options.tol = 0.001
-
-        # Initialize parameters with default values (this step is important to avoid dimension mismatch)
-        ocp.parameter_values = np.zeros(self.n_parameters)
-        return ocp
+        return state_dot
     
+    def high_level_planner_continous_dynamics_forces(self, x, u, p):
+        z = casadi.vertcat(u, x)
+        u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(z)
+        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(p)
+        return np.array(self.high_level_planner_continous_dynamics(s,local_path_length,labels_k,V_target,ref_x,ref_y,ref_heading,u_yaw_dot,pos_x,pos_y,yaw))
+
+
+
+
+
+
     def produce_X0(self,V_target,local_path_length,labels_k_params):
         # Initial guess for state trajectory
         X0_array = np.zeros((self.N+1,self.nu +  self.nx))
@@ -311,7 +402,7 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         ocp.cost.cost_type_e = 'EXTERNAL'
 
         # stage-wise cost
-        ocp.model.cost_expr_ext_cost  =  self.evalaute_objective(th_input,st_input,slack, pos_x,pos_y,yaw,vx,vy,w,\
+        ocp.model.cost_expr_ext_cost  =  self.objective(th_input,st_input,slack, pos_x,pos_y,yaw,vx,vy,w,\
                                                                 x_ref, y_ref, yaw_ref,V_target,q_v, q_pos, q_rot, q_u, slack_p_1,q_acc)
         # terminal cost
         ocp.model.cost_expr_ext_cost_e =  self.objective_terminal_cost(pos_x,pos_y,yaw,vx,x_ref, y_ref, yaw_ref,V_target,q_v, qt_pos, qt_rot)
@@ -548,7 +639,7 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
 
 
 
-    def evalaute_objective(self,th_input,st_input,slack, pos_x,pos_y,yaw,vx,vy,w,\
+    def objective(self,th_input,st_input,slack, pos_x,pos_y,yaw,vx,vy,w,\
                             x_ref, y_ref, yaw_ref,V_target,q_v, q_pos, q_rot, q_u, slack_p_1, q_acc):
         
         error_position_sqrd = (pos_x - x_ref)**2 + (pos_y - y_ref)**2
@@ -589,7 +680,7 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
     def objective_forces(self,z,p):
         V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, slack_p_1, q_acc,x_ref, y_ref, yaw_ref = self.unpack_parameters(p) 
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w = self.unpack_state(z)
-        return self.evalaute_objective(th_input,st_input,slack, pos_x,pos_y,yaw,vx,vy,w,\
+        return self.objective(th_input,st_input,slack, pos_x,pos_y,yaw,vx,vy,w,\
                             x_ref, y_ref, yaw_ref,V_target,q_v, q_pos, q_rot, q_u, slack_p_1,q_acc)
 
 
