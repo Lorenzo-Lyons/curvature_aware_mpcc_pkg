@@ -28,6 +28,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         self.nx = 7
         self.nu = 2
         self.n_parameters = 8 + self.n_points_kernelized
+        self.n_inequality_constraints = 1
         
     
     def produce_ocp(self):
@@ -75,9 +76,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         ocp.constraints.ubu = np.array([+self.max_yaw_rate,100]) 
 
         # define lane boundary constraints
-        h = ((lane_width+slack)/2)**2 - ((pos_x - ref_x)**2  + (pos_y - ref_y)**2)  # add constraint on projection ratio
-        # add constraint on projection ratio
-        ocp.model.con_h_expr = h  # Define h(x, u)
+        ocp.model.con_h_expr = self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width)  # Define h(x, u)
         ocp.constraints.lh = np.array([0.0])  # Lower bound (h_min)
         ocp.constraints.uh = np.array([1000])  # Upper bound (h_max)
 
@@ -118,9 +117,9 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         model.E = np.concatenate([np.zeros((self.nx, self.nu)), np.eye(self.nx)], axis=1)  # This extraction matrix tells forces what variables are states and what are inputs
 
         # set fixed input bounds since they will not change at runtime
-        # generate inf upper and lower bounds for the states
-        model.lb = np.array([-self.max_yaw_rate, -1000, -1000, -1000,-1000,-1000,-1000,-1000,-1000])  # lower bound on inputs
-        model.ub = np.array([+self.max_yaw_rate, +1000, +1000, +1000,+1000,+1000,+1000,+1000,+1000])  # upper bound on inputs
+        # generate inf upper and lower bounds for the inputs and states
+        model.lb = np.array([-self.max_yaw_rate, 0.0   , -1000, -1000,-1000,-1000,-1000,-1000,-1000])  # lower bound on inputs
+        model.ub = np.array([+self.max_yaw_rate, +100, +1000, +1000,+1000,+1000,+1000,+1000,+1000])  # upper bound on inputs
 
         # Set objective
         for i in range(self.N - 1):
@@ -131,9 +130,11 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         model.continuous_dynamics = self.high_level_planner_continous_dynamics_forces
 
         # Set non linear constraints
-        model.nh = 0
-        model.hu = np.array([])
-        model.hl = np.array([])
+        model.nh = self.n_inequality_constraints
+        model.ineq = self.lane_boundary_constraint_forces
+        model.hl = np.array([0.0])
+        model.hu = np.array([1000.0])  # upper bound on inequality constraints
+        
 
 
         # Define solver options
@@ -197,17 +198,17 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
             err_lat_squared = ((pos_x - ref_x) * -np.sin(ref_heading) + (pos_y - ref_y) * np.cos(ref_heading)) ** 2
 
             j = q_con * err_lat_squared +\
-                     q_lag * err_lag_squared +\
-                     q_u * u_yaw_dot ** 2
+                q_lag * err_lag_squared +\
+                q_u * u_yaw_dot ** 2 +\
+                100 * slack**2
         else:
             # cost function for CAMPCC
             # penalize deviation from the path only since the s_dot integration is much more precise
             err_lat_squared = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
             j = q_con * err_lat_squared +\
-                q_u * u_yaw_dot ** 2
+                q_u * u_yaw_dot ** 2 +\
+                100 * slack**2
 
-        # add slack cost
-        j += 100 * slack**2
         return j
     
     def objective_forces(self, z, p):
@@ -284,7 +285,13 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(p)
         return np.array(self.high_level_planner_continous_dynamics(s,local_path_length,labels_k,V_target,ref_x,ref_y,ref_heading,u_yaw_dot,pos_x,pos_y,yaw))
 
+    def lane_boundary_constraint(self,pos_x,pos_y,ref_x,ref_y,slack,lane_width):
+        return ((lane_width+slack)/2)**2 - ((pos_x - ref_x)**2  + (pos_y - ref_y)**2)  
 
+    def lane_boundary_constraint_forces(self,z, p):
+        u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(z)
+        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(p)
+        return np.array([self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width)])
 
 
 

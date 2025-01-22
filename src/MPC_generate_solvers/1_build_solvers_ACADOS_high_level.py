@@ -192,7 +192,7 @@ axes[0,0].legend()
 
 # slack activation
 axes[1,0].plot(output_array_high_level[:-1, 1], color='darkred', marker='o',label='slack variable')  # Use color and marker in plot()
-axes[1,0].set_title('salck')  # Title is plain text
+axes[1,0].set_title('slack')  # Title is plain text
 axes[1,0].plot(X0_array[:-1,1], color='gray',marker='o',markersize=2, label = 'first guess') # skip last value that will not be used
 axes[1,0].legend()
 
