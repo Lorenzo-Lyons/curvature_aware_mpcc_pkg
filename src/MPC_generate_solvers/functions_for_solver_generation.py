@@ -106,7 +106,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
     def produce_FORCES_model_codeoptions(self):
         import forcespro.nlp
 
-        model = forcespro.nlp.SymbolicModel(self.N)
+        model = forcespro.nlp.SymbolicModel(self.N+1) # this plus one is to keep the same output dimensions as the acados model that has 1 extra state
 
         model.xinitidx = np.array(range(self.nu,self.nu + self.nx))  # variables in these positions are affected by initial state constraint. (I.e. they cannot change in the first stage)
         
@@ -122,9 +122,9 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         model.ub = np.array([+self.max_yaw_rate, +100, +1000, +1000,+1000,+1000,+1000,+1000,+1000])  # upper bound on inputs
 
         # Set objective
-        for i in range(self.N - 1):
+        for i in range(self.N):
             model.objective[i] = self.objective_forces  # eval_obj is a Python function
-        model.objective[self.N-1] = self.objective_terminal_forces
+        model.objective[self.N] = self.objective_terminal_forces
   
         # Set dynamic constraint
         model.continuous_dynamics = self.high_level_planner_continous_dynamics_forces
@@ -141,8 +141,8 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         codeoptions = forcespro.CodeOptions('FORCESNLPsolver') #get standard options
         # continuous dynamics options
         codeoptions.nlp.integrator.type = 'ERK4'
-        codeoptions.nlp.integrator.Ts = self.time_horizon / self.N
-        codeoptions.nlp.integrator.nodes = 5 # intermediate nodes for the integrator
+        codeoptions.nlp.integrator.Ts = self.time_horizon / (self.N+1)
+        codeoptions.nlp.integrator.nodes = 1 # intermediate nodes for the integrator
 
         codeoptions.name = self.solver_name_forces
         codeoptions.printlevel = 0  #  1: summary line after each solve,   0: no prit

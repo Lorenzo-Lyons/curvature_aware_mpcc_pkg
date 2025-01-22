@@ -43,9 +43,9 @@ params_i = np.array([V_target, local_path_length, q_con_high,q_lag_high,q_u_high
 
 
 # set up parameters
-param_array = np.zeros((solver_maker_obj.N, solver_maker_obj.n_parameters))
+param_array = np.zeros((solver_maker_obj.N+1, solver_maker_obj.n_parameters))
 # put all parameters together
-for i in range(solver_maker_obj.N):
+for i in range(solver_maker_obj.N+1):
     param_array[i,:] = params_i
 param_array = param_array.ravel() # unpack row-wise
 
@@ -60,7 +60,7 @@ xinit[6] = 0
 
 # set up initial guess
 X0_array = solver_maker_obj.produce_X0(V_target,local_path_length,labels_k_params)
-x0_array = X0_array[:-1,:].ravel() # unpack row-wise
+x0_array = X0_array.ravel() # unpack row-wise
 
 # produce problem as a dictionary for forces
 problem = {"x0": x0_array, "xinit": xinit, "all_parameters": param_array} # all_parameters
@@ -117,10 +117,10 @@ axes[0,1].set_title('Reference Theta')  # Title as plain text
 axes[0,1].legend()
 
 # add plot of s coordinate over the time
-dt = 1.5 / solver_maker_obj.N
+dt = 1.5 / (solver_maker_obj.N+1)
 axes[1,1].plot(np.diff(output_array_high_level[:, 5])/dt, color='darkgreen', marker='o',label='s dot')  # Add color and marker to plot()
 # plot first guess
-axes[1,1].plot(V_target * np.ones(solver_maker_obj.N), color='gray', linestyle='--',label = 'V target')
+axes[1,1].plot(V_target * np.ones(solver_maker_obj.N+1), color='gray', linestyle='--',label = 'V target')
 axes[1,1].set_title('s dot coordinate')  # Title as plain text
 axes[1,1].legend()
 # set x-axis label for the last subplot

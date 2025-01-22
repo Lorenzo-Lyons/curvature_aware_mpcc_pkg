@@ -28,19 +28,6 @@ from MPC_generate_solvers.functions_for_solver_generation import generate_high_l
 
 # TODO
 # make sure N are the same between high and low level solvers
-# add the option between MPCC and CAMPCC in high level referene generator
-# with the X0 first guess written there and the parameters in there and not in this solver_parameters object ecc.
-# sort out GUI with higg and low level solvers 
-# high level planner also has qt_pos and qt_rot
-# make high level parameters actually interactive from the GUI (is this needed?)
-# fix new solver naming convention with high level low level ecc
-# add FROCES low level tracker stuff
-# DS back is now obsolete
-# check convergence for both solvers?
-
-
-
-
 
 
 
@@ -271,35 +258,57 @@ class MPCC_controller_class():
 
         labels_k, local_path_length = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forecast)
         pos_x_init_rot, pos_y_init_rot, yaw_init_rot,xyyaw_ref_path = self.relative_xyyaw_to_current_path(x_y_yaw_state) # current car state relative to current path index
-        self.set_up_high_level_solver(pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length,labels_k)
+        problem_high_level = self.set_up_high_level_solver(pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length,labels_k)
 
-        # solve the high level problem
-        status_high_level = self.high_level_solver.solve()
+        # call the high level solver
+        if self.solver_software == 'FORCES':
+            output_high_level, exitflag_high, info_high = self.high_level_solver.solve(problem_high_level)
+        elif self.solver_software == 'ACADOS':
+            status_high_level = self.high_level_solver.solve()
 
-        if status_high_level != 0:
-            print(f"HIGH LEVEL Solver failed with status {status_high_level}")
-            self.last_converged_high = False
-            # reload the solver to reset parameters
-            self.high_level_solver.reset()
-        else: # solver success
-            if self.last_converged_high == False:
-                print(' ')
-                print(' ----------------- ')
-                print('High level solver recovered from previous failure, now converged')
-                print(' ')
+        # extract high level solution
+        if self.solver_software == 'FORCES':
+            output_array_high_level = np.array(list(output_high_level.values()))
 
-            self.last_converged_high = True
-            # extract solution
+        elif self.solver_software == 'ACADOS':
+            output_array_high_level = np.zeros((self.high_level_solver_generator_obj.N+1, self.high_level_solver_generator_obj.nu + self.high_level_solver_generator_obj.nx))
+            for i in range(self.high_level_solver_generator_obj.N+1):
+                if i == self.high_level_solver.N:
+                    u_i_solution = np.array([0.0, 0.0])
+                else:
+                    u_i_solution = self.high_level_solver.get(i, "u")
+                x_i_solution = self.high_level_solver.get(i, "x")
+                output_array_high_level[i] = np.concatenate((u_i_solution, x_i_solution))
 
-        output_array_high_level = np.zeros((self.high_level_solver_generator_obj.N+1, self.high_level_solver_generator_obj.nu + self.high_level_solver_generator_obj.nx))
-        for i in range(self.high_level_solver_generator_obj.N+1):
-            if i == self.high_level_solver.N:
-                u_i_solution = np.array([0.0, 0.0])
+
+        # check if solver converged
+        if self.solver_software == 'FORCES':
+            if exitflag_high != 1:
+                self.last_converged_high = False
+                print(f"HIGH LEVEL Solver failed with exitflag {exitflag_high}")
             else:
-                u_i_solution = self.high_level_solver.get(i, "u")
-            x_i_solution = self.high_level_solver.get(i, "x")
-            output_array_high_level[i] = np.concatenate((u_i_solution, x_i_solution))
+                self.last_converged_high = True
+                if self.last_converged_high == False:
+                    print(' ')
+                    print(' ----------------- ')
+                    print('High level solver recovered from previous failure, now converged')
+                    print(' ')
 
+        elif self.solver_software == 'ACADOS': 
+            if status_high_level != 0:
+                self.last_converged_high = False
+                self.high_level_solver.reset() # reload the solver to reset parameters
+                print(f"HIGH LEVEL Solver failed with status {status_high_level}")
+
+            else: # solver success
+                self.last_converged_high = True
+                if self.last_converged_high == False:
+                    print(' ')
+                    print(' ----------------- ')
+                    print('High level solver recovered from previous failure, now converged')
+                    print(' ')
+
+            
         # --------------------------------
 
 
@@ -375,16 +384,30 @@ class MPCC_controller_class():
                                                 self.high_level_solver_generator_obj.solver_name,
                                                 self.high_level_solver_generator_obj.solver_name + '.json')
             
-        # check if the file exists
-        if os.path.isfile(high_level_solver_path) == False:
-            print('')
-            print('Warning! The HIGH LEVEL solver location is invalid')
-            print('')
-        else:
-            self.high_level_ocp = self.high_level_solver_generator_obj.produce_ocp()
-            self.high_level_solver = AcadosOcpSolver(self.high_level_ocp, json_file=high_level_solver_path, build=False, generate=False)
-            print('________________________________________________________________________________________')
-            print('Successfully loaded high level solver: ' + self.high_level_solver_generator_obj.solver_name)
+        
+        if solver_software == 'ACADOS':
+            # check if the file exists
+            if os.path.isfile(high_level_solver_path) == False:
+                print('')
+                print('Warning! The HIGH LEVEL solver location is invalid')
+                print('')
+            else:
+                self.high_level_ocp = self.high_level_solver_generator_obj.produce_ocp()
+                self.high_level_solver = AcadosOcpSolver(self.high_level_ocp, json_file=high_level_solver_path, build=False, generate=False)
+                print('________________________________________________________________________________________')
+                print('Successfully loaded high level solver: ' + self.high_level_solver_generator_obj.solver_name)
+
+        elif solver_software == 'FORCES':
+            # check if folder exists
+            high_level_solver_path = os.path.join(self.solvers_folder_path,self.high_level_solver_generator_obj.solver_name_forces)
+            if os.path.isdir(high_level_solver_path) == False:
+                print('')
+                print('Warning! The HIGH LEVEL solver location is invalid')
+                print('')
+            else:
+                self.high_level_solver = forcespro.nlp.Solver.from_directory(high_level_solver_path)
+                print('________________________________________________________________________________________')
+                print('Successfully loaded high level solver: ' + self.high_level_solver_generator_obj.solver_name_forces)
 
 
 
@@ -405,9 +428,8 @@ class MPCC_controller_class():
                 print('Successfully loaded low level solver: ' + self.low_level_solver_generator_obj.solver_name_acados)
 
         elif solver_software == 'FORCES':
-            # fill in FORCES stuff here
-            low_level_solver_path = os.path.join(self.solvers_folder_path,
-                                                                self.low_level_solver_generator_obj.solver_name_forces)
+            # check if folder exists
+            low_level_solver_path = os.path.join(self.solvers_folder_path,self.low_level_solver_generator_obj.solver_name_forces)
             if os.path.isdir(low_level_solver_path) == False:
                 print('')
                 print('Warning! The LOW LEVEL solver location is invalid')
@@ -521,29 +543,40 @@ class MPCC_controller_class():
         xinit[0] = pos_x_init_rot
         xinit[1] = pos_y_init_rot
         xinit[2] = yaw_init_rot
-        # otehr states need to be 0 so ok
-        self.high_level_solver.set(0, "lbx", xinit)
-        self.high_level_solver.set(0, "ubx", xinit)
 
-        # set up parameters
+        # define parameters
         params_i = np.array([V_target, local_path_length, self.q_con, self.q_lag, self.q_u_yaw_rate, self.qt_pos_high, self.qt_rot_high,self.l_width,*labels_k])
-        #params_i = np.array([V_target, local_path_length ,*labels_k])
+        param_array = np.zeros((self.high_level_solver_generator_obj.N+1, self.high_level_solver_generator_obj.n_parameters))
         for i in range(self.high_level_solver_generator_obj.N+1):
-            self.high_level_solver.set(i, "p", params_i)
+            param_array[i,:] = params_i
 
-        # produce reference x y and yaw fro the path to use as a first guess
-        # if self.last_converged_high:
-        #     pass # keep previous solution as first guess i.e. warm starting
-        # else:
-        #set up first guess
+        # define first guess
         X0_array_high_level = self.high_level_solver_generator_obj.produce_X0(self.V_target,local_path_length,labels_k)
-        # assign frist guess
-        for i in range(self.high_level_solver_generator_obj.N):
-            self.high_level_solver.set(i, "u", X0_array_high_level[i,:self.high_level_solver_generator_obj.nu])
-            self.high_level_solver.set(i, "x", X0_array_high_level[i, self.high_level_solver_generator_obj.nu:])
-        self.high_level_solver.set(self.high_level_solver_generator_obj.N, "x", X0_array_high_level[self.high_level_solver_generator_obj.N, self.high_level_solver_generator_obj.nu:])
+        
 
+        if self.solver_software == 'FORCES':
+            # - set up initial guess and parameters
+            x0_array_forces = X0_array_high_level.ravel()
+            all_params_array_forces = param_array.ravel()
+            problem_high_leval = {"x0": x0_array_forces, "xinit": xinit, "all_parameters": all_params_array_forces}
+        else: # ACADOS
 
+            # assign initial state
+            self.high_level_solver.set(0, "lbx", xinit)
+            self.high_level_solver.set(0, "ubx", xinit)
+
+            # assign parameters
+            for i in range(self.high_level_solver_generator_obj.N+1):
+                self.high_level_solver.set(i, "p", params_i)
+
+            # assign frist guess
+            for i in range(self.high_level_solver_generator_obj.N):
+                self.high_level_solver.set(i, "u", X0_array_high_level[i,:self.high_level_solver_generator_obj.nu])
+                self.high_level_solver.set(i, "x", X0_array_high_level[i, self.high_level_solver_generator_obj.nu:])
+            self.high_level_solver.set(self.high_level_solver_generator_obj.N, "x", X0_array_high_level[self.high_level_solver_generator_obj.N, self.high_level_solver_generator_obj.nu:])
+            problem_high_leval = [] # dummy value if using acados
+
+        return problem_high_leval
 
 
     def set_up_low_level_solver_problem(self,output_array_high_level,V_target,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega):
@@ -592,11 +625,6 @@ class MPCC_controller_class():
             self.low_level_solver.set(0, "ubx", xinit)
             # Initial guess for state trajectory
             X0_array = self.low_level_solver_generator_obj.produce_X0(V_target, output_array_high_level)
-
-            # # assign control input bounds
-            # for k in range(self.low_level_solver_generator_obj.N):
-            #         self.low_level_solver.set(k, "lbu", np.array([0,-1,0]))  # Lower bound on u at stage
-            #         self.low_level_solver.set(k, "ubu", np.array([1,1,100]))
 
             # assign frist guess
             for i in range(self.low_level_solver_generator_obj.N):
