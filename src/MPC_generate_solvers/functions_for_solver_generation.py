@@ -193,7 +193,6 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         #ocp.solver_options.qp_solver_iter_max = 20
         ocp.solver_options.print_level = 0 # no print
         ocp.solver_options.tol = 0.001
-        #ocp.solver_options.globalization_fixed_step_length = 0.001
 
         # Initialize parameters with default values (this step is important to avoid dimension mismatch)
         ocp.parameter_values = np.zeros(self.n_parameters)
@@ -339,9 +338,13 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         ocp.solver_options.globalization = 'FIXED_STEP' # 'MERIT_BACKTRACKING', 'FIXED_STEP' # fixed is the default
         ocp.solver_options.print_level = 0 # no print
         #ocp.solver_options.tol = 0.001
+        if self.dynamic_model == "kinematic_bicycle":
+            ocp.solver_options.sim_method_num_steps = 1  # Number of sub-steps in each interval for integration purpouses
+        else:#if using the dynamic model use more intermediate integration steps
+            ocp.solver_options.sim_method_num_steps = 10
 
-        ocp.solver_options.qp_solver_iter_max = 10
-        ocp.solver_options.nlp_solver_max_iter = 1000
+        #ocp.solver_options.qp_solver_iter_max = 10
+        #ocp.solver_options.nlp_solver_max_iter = 1000
 
         # Initialize parameters with default values (this step is important to avoid dimension mismatch)
         ocp.parameter_values = np.zeros(self.n_parameters)
