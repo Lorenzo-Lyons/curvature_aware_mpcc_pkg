@@ -16,7 +16,7 @@ from functions_for_solver_generation import generate_low_level_solver_ocp
 
 
 # select the solver to build MPCC or CAMPCC
-dynamic_model = 'dynamic_bicycle' # 'kinematic_bicycle', 'dynamic_bicycle', 'SVGP'
+dynamic_model = 'kinematic_bicycle' # 'kinematic_bicycle', 'dynamic_bicycle', 'SVGP'
 
 # instantiate the class
 ocp_maker_obj = generate_low_level_solver_ocp(dynamic_model)

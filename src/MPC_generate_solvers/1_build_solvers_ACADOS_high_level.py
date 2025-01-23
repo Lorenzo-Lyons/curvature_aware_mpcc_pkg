@@ -11,14 +11,14 @@ from functions_for_solver_generation import generate_high_level_path_planner_ocp
 MPC_algorithm = 'MPCC' # 'MPCC' or 'CAMPCC'
 
 # instantiate the class
-ocp_maker_obj = generate_high_level_path_planner_ocp(MPC_algorithm)
+solver_maker_obj = generate_high_level_path_planner_ocp(MPC_algorithm)
 
 
 
 # change current folder to be where the solvers need to be put
 current_script_path = os.path.realpath(__file__)
 current_script_dir = os.path.dirname(current_script_path)
-path_to_built_solvers = os.path.join(current_script_dir,'solvers/' + ocp_maker_obj.solver_name)
+path_to_built_solvers = os.path.join(current_script_dir,'solvers/' + solver_maker_obj.solver_name_acados)
 if not os.path.exists(path_to_built_solvers):
     os.makedirs(path_to_built_solvers)  # Creates the folder and any necessary parent folders
 os.chdir(path_to_built_solvers)
@@ -26,12 +26,12 @@ os.chdir(path_to_built_solvers)
 
 
 print('_________________________________________________')
-print('Building solver ', ocp_maker_obj.solver_name)
+print('Building solver ', solver_maker_obj.solver_name_acados)
 print
 
-ocp = ocp_maker_obj.produce_ocp()
-solver = AcadosOcpSolver(ocp, json_file=ocp_maker_obj.solver_name + '.json') # this will regenerate the solver
-#solver = AcadosOcpSolver(ocp, json_file=ocp_maker_obj.solver_name + '.json', build=False, generate=False) # this will use a previously compiled solver
+ocp = solver_maker_obj.produce_ocp()
+solver = AcadosOcpSolver(ocp, json_file=solver_maker_obj.solver_name_acados + '.json') # this will regenerate the solver
+#solver = AcadosOcpSolver(ocp, json_file=solver_maker_obj.solver_name_acados + '.json', build=False, generate=False) # this will use a previously compiled solver
 
 print('‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾')
 
@@ -46,7 +46,7 @@ print('------------------------------')
 
 
 V_target = 3
-local_path_length = V_target * ocp_maker_obj.time_horizon * 1.2 # this is how it would be evalauted in the mpc
+local_path_length = V_target * solver_maker_obj.time_horizon * 1.2 # this is how it would be evalauted in the mpc
 q_con_high = 1 
 q_lag_high = 1 
 q_u_high = 0.01 #0.005 
@@ -57,19 +57,19 @@ lane_width = 0.5
 R = 0.75
 k = -1/R # going right
 print('k =', k)
-labels_k_params = -1/R * np.ones(ocp_maker_obj.n_points_kernelized) # -1.5
+labels_k_params = -1/R * np.ones(solver_maker_obj.n_points_kernelized) # -1.5
 labels_k_params[:10] = 0 # go straight at the beginning
 
 # put all paratemters together
 params_i = np.array([V_target, local_path_length, q_con_high,q_lag_high,q_u_high,qt_pos_high, qt_rot_high,lane_width,*labels_k_params])
-for i in range(ocp_maker_obj.N+1):
+for i in range(solver_maker_obj.N+1):
     solver.set(i, "p", params_i)
 
 
 # set initial condition
                 # x y yaw s ref_x ref_y ref_heading 
 
-xinit = np.zeros(ocp_maker_obj.nx) # all zeros
+xinit = np.zeros(solver_maker_obj.nx) # all zeros
 xinit[0] = 0
 xinit[1] = 0.2
 xinit[2] = np.pi/4 # np.pi/4 # assign initial yaw of 45 degrees
@@ -80,13 +80,13 @@ solver.set(0, "ubx", xinit)
 
 
 # produce reference x y and yaw fro the path to use as a first guess
-X0_array = ocp_maker_obj.produce_X0(V_target,local_path_length,labels_k_params)
+X0_array = solver_maker_obj.produce_X0(V_target,local_path_length,labels_k_params)
 
 # assign frist guess
-for i in range(ocp_maker_obj.N):
-    solver.set(i, "u", X0_array[i,:ocp_maker_obj.nu])
-    solver.set(i, "x", X0_array[i, ocp_maker_obj.nu:])
-solver.set(ocp_maker_obj.N, "x", X0_array[ocp_maker_obj.N, ocp_maker_obj.nu:])
+for i in range(solver_maker_obj.N):
+    solver.set(i, "u", X0_array[i,:solver_maker_obj.nu])
+    solver.set(i, "x", X0_array[i, solver_maker_obj.nu:])
+solver.set(solver_maker_obj.N, "x", X0_array[solver_maker_obj.N, solver_maker_obj.nu:])
 
 
 
@@ -104,9 +104,9 @@ print(f"Total solver time: {total_time:.6f} seconds")
 
 
 # retrieve solution like mpc node would do it
-output_array_high_level = np.zeros((ocp_maker_obj.N+1, ocp_maker_obj.nu + ocp_maker_obj.nx))
-for i in range(ocp_maker_obj.N+1):
-    if i == ocp_maker_obj.N:
+output_array_high_level = np.zeros((solver_maker_obj.N+1, solver_maker_obj.nu + solver_maker_obj.nx))
+for i in range(solver_maker_obj.N+1):
+    if i == solver_maker_obj.N:
         u_i_solution = np.array([0.0,0.0])
     else:
         u_i_solution = solver.get(i, "u")
@@ -124,7 +124,7 @@ solver_time_vec = np.zeros(n_tries)
 np.random.seed(0)
 for trial in range(n_tries):
     # set initial condition
-    xinit = np.zeros(ocp_maker_obj.nx) # all zeros
+    xinit = np.zeros(solver_maker_obj.nx) # all zeros
 
     # pick random initial condition on y and yaw
     xinit[1] =  np.random.uniform(-0.2,0.2)
@@ -133,10 +133,10 @@ for trial in range(n_tries):
     solver.set(0, "ubx", xinit)
 
     # assign frist guess
-    for i in range(ocp_maker_obj.N):
-        solver.set(i, "u", X0_array[i,:ocp_maker_obj.nu])
-        solver.set(i, "x", X0_array[i, ocp_maker_obj.nu:])
-    solver.set(ocp_maker_obj.N, "x", X0_array[ocp_maker_obj.N, ocp_maker_obj.nu:])
+    for i in range(solver_maker_obj.N):
+        solver.set(i, "u", X0_array[i,:solver_maker_obj.nu])
+        solver.set(i, "x", X0_array[i, solver_maker_obj.nu:])
+    solver.set(solver_maker_obj.N, "x", X0_array[solver_maker_obj.N, solver_maker_obj.nu:])
 
     # solve problem ACADOS_SILENT=ON
     status = solver.solve()
@@ -205,10 +205,10 @@ axes[0,1].set_title('Reference Theta')  # Title as plain text
 axes[0,1].legend()
 
 # add plot of s coordinate over the time
-dt = 1.5 / ocp_maker_obj.N
+dt = 1.5 / solver_maker_obj.N
 axes[1,1].plot(np.diff(output_array_high_level[:, 5])/dt, color='darkgreen', marker='o',label='s dot')  # Add color and marker to plot()
 # plot first guess
-axes[1,1].plot(V_target * np.ones(ocp_maker_obj.N), color='gray', linestyle='--',label = 'V target')
+axes[1,1].plot(V_target * np.ones(solver_maker_obj.N), color='gray', linestyle='--',label = 'V target')
 axes[1,1].set_title('s dot coordinate')  # Title as plain text
 axes[1,1].legend()
 # set x-axis label for the last subplot

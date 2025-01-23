@@ -1,9 +1,8 @@
 import numpy as np
 import sys
 import time
-sys.path.insert(0, '/home/lorenzo/OneDrive/PhD/ubuntu_stuff/Forces_pro_extracted/forces_pro_client')
-import forcespro.nlp
-import casadi
+#sys.path.insert(0, '/home/lorenzo/OneDrive/PhD/ubuntu_stuff/Forces_pro_extracted/forces_pro_client')
+#import forcespro.nlp
 import math
 from scipy.optimize import minimize, Bounds
 import warnings #turn off low rank waring from chebfit

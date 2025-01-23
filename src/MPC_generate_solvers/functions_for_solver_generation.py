@@ -5,12 +5,9 @@ except:
     from path_track_definitions import K_RBF_kernel, K_matern2_kernel
 
 import casadi
-import math
-
 
 # This assumes that the DART system identification package is installed
 from DART_dynamic_models.dart_dynamic_models import model_functions 
-
 
 
 class generate_high_level_path_planner_ocp(): # inherits from DART system identification
@@ -18,7 +15,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
     def __init__(self,MPC_algorithm):
         
         self.MPC_algorithm = MPC_algorithm
-        self.solver_name = 'high_level_reference_generator_' + MPC_algorithm
+        self.solver_name_acados = 'high_level_reference_generator_' + MPC_algorithm
         self.solver_name_forces = 'high_level_forces_reference_generator_' + MPC_algorithm
 
         self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
@@ -43,7 +40,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
         # Create model object
         model = AcadosModel()
-        model.name = self.solver_name
+        model.name = self.solver_name_acados
         model.x = x
         model.u = u
         model.p = p
@@ -255,11 +252,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
                                                                             lambda_val,
                                                                             self.n_points_kernelized)
         s_star = s / local_path_length # normalize s
-        try:
-            from path_track_definitions import K_matern2_kernel
-        except:
-            from .path_track_definitions import K_matern2_kernel
-            
+
         K_x_star = K_matern2_kernel(s_star, normalized_s_4_kernel_path,
                                 path_lengthscale,1,self.n_points_kernelized)      
         left_side = K_x_star @ Kxx_inv

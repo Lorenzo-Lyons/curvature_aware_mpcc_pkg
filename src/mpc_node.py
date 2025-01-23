@@ -19,7 +19,7 @@ from dynamic_reconfigure.server import Server
 from curvature_aware_mpcc_pkg.cfg import GUI_mpc_dynamic_reconfigureConfig
 import rospkg
 # THIS NEEDS TO BE FIXED (i.e. only use forces and acados stuff if necessary)
-import forcespro.nlp
+#import forcespro.nlp
 from acados_template import AcadosOcpSolver
 
 from tf.transformations import euler_from_quaternion
@@ -74,9 +74,6 @@ class MPC_GUI_manager:
             self.vehicles_list[i].qt_rot = config['qt_rot']
             self.vehicles_list[i].q_acc = config['q_acc']
             self.vehicles_list[i].l_width = config['l_width']
-            self.vehicles_list[i].dt = config['dt']
-            self.vehicles_list[i].save_data = config['save_data']
-            self.vehicles_list[i].data_folder_name = config['data_folder_name']
             self.vehicles_list[i].minimal_plotting = config['minimal_plotting']
             self.vehicles_list[i].delay_compensation = config['delay_compensation']
             self.vehicles_list[i].solver_software = config['Solver_software']
@@ -117,10 +114,10 @@ class MPC_GUI_manager:
 
 
 class MPCC_controller_class():
-    def __init__(self, car_number):
+    def __init__(self, car_number,dt_controller_rate):
 
         # set up default solver choices that will be overwritten by the dynamic reconfigure anyway so ok
-        self.solver_software = 'FORCES' # 'FORCES', 'ACADOS'
+        self.solver_software = 'ACADOS' # 'FORCES', 'ACADOS'
         self.MPC_algorithm = 'MPCC' # 'CAMPCC'    # solver algorithm can be standard MPCC or curvature-aware CAMPCC
         self.dynamic_model = 'kinematic_bicycle' # 'dynamic_bicycle', 'kinematic_bicycle'
 
@@ -131,6 +128,7 @@ class MPCC_controller_class():
 
         #set up variables
         self.car_number = car_number
+        self.dt_controller_rate = dt_controller_rate
 
         # initialize state variables
         self.vx = 0
@@ -142,10 +140,11 @@ class MPCC_controller_class():
 
         # delay compensation if in the lab
         self.delay_compensation = True
-        self.delay = 0.04 # communication delay in seconds
+        self.delay = 0.04 # communication delay in seconds (in the lab)
 
         # set p contingency if solver does not converge
-        self.last_converged_high = False
+        self.last_converged_high = True
+        self.last_converged_low = True
 
 
         # define selected solver
@@ -236,12 +235,11 @@ class MPCC_controller_class():
 
     def run_one_MPCC_control_loop(self,x_y_yaw_state,vx,vy,omega,V_target):
 
-
         start_clock_time = rospy.get_rostime()
         # at runtime, local path and dynamic obstacle need to be updated. Dyn obst is updated by the subscriber callback
 
         # find the closest point on the global path (i.e. measure s)
-        estimated_ds = self.vx * self.dt  # esitmated ds from previous time instant (velocity is measured now so not accounting for acceleration, but this is only for the search of the s initial s value, so no need to be accurate)
+        estimated_ds = self.vx * self.dt_controller_rate  # esitmated ds from previous time instant (velocity is measured now so not accounting for acceleration, but this is only for the search of the s initial s value, so no need to be accurate)
         s, self.current_path_index = find_s_of_closest_point_on_global_path(np.array([x_y_yaw_state[0], x_y_yaw_state[1]]), self.s_vals_global_path,
                                                                   self.x_vals_global_path, self.y_vals_global_path,
                                                                   self.previous_path_index, estimated_ds)
@@ -250,13 +248,13 @@ class MPCC_controller_class():
 
 
         # produce Chebyshev coefficients that represent local path
-        Ds_forecast = V_target * self.dt * self.high_level_solver_generator_obj.N * 1.2
+        Ds_forward = 1.2 * V_target * self.high_level_solver_generator_obj.time_horizon #  self.dtt * self.high_level_solver_generator_obj.N
         Ds_back = 0.0 # this is the length of the path that is behind the car
 
 
         # ------ HIGH LEVEL SOLVER ------
 
-        labels_k, local_path_length = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forecast)
+        labels_k, local_path_length = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forward)
         pos_x_init_rot, pos_y_init_rot, yaw_init_rot,xyyaw_ref_path = self.relative_xyyaw_to_current_path(x_y_yaw_state) # current car state relative to current path index
         problem_high_level = self.set_up_high_level_solver(pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length,labels_k)
 
@@ -264,7 +262,7 @@ class MPCC_controller_class():
         if self.solver_software == 'FORCES':
             output_high_level, exitflag_high, info_high = self.high_level_solver.solve(problem_high_level)
         elif self.solver_software == 'ACADOS':
-            status_high_level = self.high_level_solver.solve()
+            exitflag_high = self.high_level_solver.solve()
 
         # extract high level solution
         if self.solver_software == 'FORCES':
@@ -280,48 +278,22 @@ class MPCC_controller_class():
                 x_i_solution = self.high_level_solver.get(i, "x")
                 output_array_high_level[i] = np.concatenate((u_i_solution, x_i_solution))
 
-
         # check if solver converged
-        if self.solver_software == 'FORCES':
-            if exitflag_high != 1:
-                self.last_converged_high = False
-                print(f"HIGH LEVEL Solver failed with exitflag {exitflag_high}")
-            else:
-                self.last_converged_high = True
-                if self.last_converged_high == False:
-                    print(' ')
-                    print(' ----------------- ')
-                    print('High level solver recovered from previous failure, now converged')
-                    print(' ')
-
-        elif self.solver_software == 'ACADOS': 
-            if status_high_level != 0:
-                self.last_converged_high = False
-                self.high_level_solver.reset() # reload the solver to reset parameters
-                print(f"HIGH LEVEL Solver failed with status {status_high_level}")
-
-            else: # solver success
-                self.last_converged_high = True
-                if self.last_converged_high == False:
-                    print(' ')
-                    print(' ----------------- ')
-                    print('High level solver recovered from previous failure, now converged')
-                    print(' ')
-
-            
+        self.last_converged_high = self.check_solver_convergence(exitflag_high,self.last_converged_high,0) # last input is the choice between high and low level solver
+        
         # --------------------------------
 
 
 
         # ------ LOW LEVEL SOLVER ------
             
-        problem , param_array = self.set_up_low_level_solver_problem(output_array_high_level,V_target,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega)
+        problem_low_level = self.set_up_low_level_solver_problem(output_array_high_level,V_target,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega)
 
         # call the low level solver
         if self.solver_software == 'FORCES':
-            output_low_level, exitflag, info = self.low_level_solver.solve(problem)
+            output_low_level, exitflag_low, info = self.low_level_solver.solve(problem_low_level)
         elif self.solver_software == 'ACADOS':
-            exitflag = self.low_level_solver.solve() # solve the problem
+            exitflag_low = self.low_level_solver.solve() # solve the problem
 
         # extract low level solution
         if self.solver_software == 'FORCES':
@@ -335,11 +307,13 @@ class MPCC_controller_class():
                 x_i_solution = self.low_level_solver.get(i, "x")
                 output_array_low_level[i] = np.concatenate((u_i_solution, x_i_solution))
 
+        # check if solver converged
+        self.last_converged_low = self.check_solver_convergence(exitflag_low,self.last_converged_low, 1) # last input is the choice between high and low level solver
+
         # --------------------------------
         
 
-        # check if solver converged
-        self.check_solver_convergence(exitflag)
+
 
         # publish control inputs
         self.publish_control_inputs(output_array_low_level)
@@ -353,39 +327,17 @@ class MPCC_controller_class():
         total_time = (stop_clock_time - start_clock_time).to_sec()
         self.comptime_publisher.publish(total_time)
 
-        # store data if necessary
-        if self.save_data == True:
-            try:
-                # write new row
-                self.write_new_data_row(total_time, info.solvetime, params_i, output_array)
-            except:
-                print('creating new data file')
-                self.setup_data_recording()
-                self.writer.writerow(['s global path', 'x global path', 'y global path'])
-                self.writer.writerow([s_vals_global_path, x_vals_global_path, y_vals_global_path])
-                self.writer.writerow(
-                    ['elapsed time', 'opti x', 'opti y', 'opti theta', 'safety_value', 'throttle', 'steering',
-                        'current',
-                        'voltage', 'IMU[0]', 'IMU[1]', 'IMU[2]', 'endocder velocity', 'vx', 'vy', 'omega', 'total comp time','solver comp time','params_i',
-                        'solver solution'])
-                self.write_new_data_row(total_time, info.solvetime, params_i, output_array)
-
-
-
-
-
 
     def set_solver_type(self,solver_software, MPC_algorithm, dynamic_model):
         print('setting solver type')
 
         # --- load high level solver for reference generation ---
         self.high_level_solver_generator_obj = generate_high_level_path_planner_ocp(MPC_algorithm)
-        high_level_solver_path = os.path.join(self.solvers_folder_path,
-                                                self.high_level_solver_generator_obj.solver_name,
-                                                self.high_level_solver_generator_obj.solver_name + '.json')
-            
-        
+
         if solver_software == 'ACADOS':
+            high_level_solver_path = os.path.join(self.solvers_folder_path,
+                                                    self.high_level_solver_generator_obj.solver_name_acados,
+                                                    self.high_level_solver_generator_obj.solver_name_acados + '.json')
             # check if the file exists
             if os.path.isfile(high_level_solver_path) == False:
                 print('')
@@ -395,9 +347,11 @@ class MPCC_controller_class():
                 self.high_level_ocp = self.high_level_solver_generator_obj.produce_ocp()
                 self.high_level_solver = AcadosOcpSolver(self.high_level_ocp, json_file=high_level_solver_path, build=False, generate=False)
                 print('________________________________________________________________________________________')
-                print('Successfully loaded high level solver: ' + self.high_level_solver_generator_obj.solver_name)
+                print('Successfully loaded high level solver: ' + self.high_level_solver_generator_obj.solver_name_acados)
 
         elif solver_software == 'FORCES':
+            import forcespro.nlp
+
             # check if folder exists
             high_level_solver_path = os.path.join(self.solvers_folder_path,self.high_level_solver_generator_obj.solver_name_forces)
             if os.path.isdir(high_level_solver_path) == False:
@@ -449,7 +403,6 @@ class MPCC_controller_class():
         # high level parameters
         self.V_target = 1  # in terms of being scaled down the proportion is vreal life[km/h] = v[m/s]*42.0000  (assuming the 30cm jetracer is a 3.5 m long car)
         
-        self.dt = 0.1  # so first number is the prediction horizon in seconds -this is the dt of the solver so it will think that the control inputs are changed every dt seconds
         # # mpc stage cost tuning weights
         self.q_v = 1  # relative weight of s_dot following
         self.q_con = 1  # relative weight of lat error
@@ -475,11 +428,11 @@ class MPCC_controller_class():
 
     
     
-    def produce_ylabels_4_local_kernelized_path(self,s,Ds_back,Ds_forecast):
+    def produce_ylabels_4_local_kernelized_path(self,s,Ds_back,Ds_forward):
         #extract indexes of local path
 
-        mask = (self.s_4_local_path >= s - Ds_back) & (self.s_4_local_path <= s + Ds_forecast)
-        local_path_length = Ds_back + Ds_forecast
+        mask = (self.s_4_local_path >= s - Ds_back) & (self.s_4_local_path <= s + Ds_forward)
+        local_path_length = Ds_back + Ds_forward
         # Extract the indexes where the condition is true
         indexes = np.where(mask)[0]
         s_data_points =  self.s_4_local_path[indexes]  # This will have the local path parametrized starting from 0
@@ -636,51 +589,49 @@ class MPCC_controller_class():
             problem = [] # dummy value if using acados 
 
 
-        return problem, param_array
+        return problem
     
 
-
     
-    def check_solver_convergence(self,exitflag):
-        # check if solver converged
+    def check_solver_convergence(self,exitflag,solver_converged_previous,hig_low_tag):
+        if hig_low_tag == 0:
+            solver_level = 'HIGH level'
+        elif hig_low_tag == 1:
+            solver_level = 'LOW level'
+
+        # define the different exit flags for the different solvers
         if self.solver_software == 'FORCES':
-            if exitflag != 1:
-                if exitflag == 0:
-                    maxit_reached = True
-                else:
-                    maxit_reached = False
-                latest_solver_converged = False
-            else: 
-                latest_solver_converged = True
-
+            all_good_number = 1
+            maxit_number = 0
         elif self.solver_software == 'ACADOS':
+            all_good_number = 0
+            maxit_number = 1
 
-            if exitflag != 0:
-                print('LOW LEVEL SOLVER FAILED')
-                if exitflag == 1:
-                    maxit_reached = True
-                else:
-                    maxit_reached = False
-                latest_solver_converged = False
-                print('resetting low level acados solver')
-                self.low_level_solver.reset() # this resets stored internal values that may cause the solver to fail again next time
+        # check if solver converged
+        if exitflag != all_good_number:
+            solver_converged = False
+            if exitflag == maxit_number:
+                maxit_reached = True
             else:
-                latest_solver_converged = True
+                maxit_reached = False
+        else: 
+            solver_converged = True
 
         # print out messages for the user
-        if latest_solver_converged == True and self.solver_converged == True:
-            pass
-        elif latest_solver_converged == True and self.solver_converged == False:
+        if solver_converged == True and solver_converged_previous == True:
+            pass # all good in the neighbourhood
+        elif solver_converged == True and solver_converged_previous == False:
+            print(solver_level, 'solver recovered from previous failure, now converged')
             print(' ')
             print(' ----------------- ')
-            print('Solver recovered from previous failure, now converged')
 
-        elif latest_solver_converged == False:
-            print(self.solver_software + f" Solver failed with exitflag/status {exitflag}")
+        elif solver_converged == False:
+            print(solver_level, self.solver_software + f" solver failed with exitflag/status {exitflag}")
             if maxit_reached == True:
                 print('Max iterations reached')
 
-        self.solver_converged = latest_solver_converged # update the latest solver convergence status
+        return solver_converged
+
         
 
 
@@ -697,34 +648,6 @@ class MPCC_controller_class():
 
         self.throttle_publisher.publish(throttle_val)
         self.steering_publisher.publish(steering_val)
-
-
-    def setup_data_recording(self):
-        date_time = datetime.now()
-        date_time_str = date_time.strftime("%m_%d_%Y_%H_%M_%S")
-        rospack = rospkg.RosPack()
-        ca_pkg_path = rospack.get_path('curvature_aware_mpcc_pkg')
-        print(ca_pkg_path)
-        file_name = ca_pkg_path + '/src/' + self.data_folder_name + '/recording_' + date_time_str + '.csv'
-        file = open(file_name, 'w')
-        writer = csv.writer(file)
-        start_elapsed_time = rospy.get_rostime()
-
-        self.file = file
-        self. writer = writer
-        self.start_elapsed_time = start_elapsed_time
-        return
-
-    def write_new_data_row(self, total_time, solvetime ,  params_i, output_array):
-        # store data here
-        stop_clock_time = rospy.get_rostime()
-        elapsed_time = stop_clock_time.secs - self.start_elapsed_time.secs + (
-                stop_clock_time.nsecs - self.start_elapsed_time.nsecs) / 1000000000
-        data_line = [elapsed_time, self.x_y_yaw_state[0], self.x_y_yaw_state[1], self.x_y_yaw_state[2],
-                     self.safety_value, self.throttle, self.steering, self.current,
-                     self.voltage, self.IMU_acceleration[0], self.IMU_acceleration[1], self.IMU_acceleration[2], self.encoder_velocity,
-                     self.vx, self.vy, self.omega, total_time, solvetime, params_i.tolist(), output_array.tolist()]
-        self.writer.writerow(data_line)
 
 
 
@@ -967,80 +890,9 @@ class MPCC_controller_class():
         return marker_array
 
 
-    def produce_ellipse_marker(self, output_array, sigma_interval, rgba):
-        #                 0   1     2   3 4   5   6  7  8 9    10     11      12     13     14     15      16      17      18
-        #output array = [th steer slack x y theta vx vy w s sigmaVx sigmaVy sigmaW sigmaX sigmaY sigmaXY sigmaT sigmaTX sigma TY]
-
-
-        marker_array = MarkerArray()
-        # print('---')
-        for i in range(1, output_array.shape[0],4):
-            #rebuild covariance partix of x y position
-            covar_mat = np.array([[output_array[i,13],output_array[i,15]],[output_array[i,15],output_array[i,14]]])
-
-
-
-            #solving to find the rotation that will diagonalize the covariance matrix
-            angle = 0.5 * np.arctan2((2*covar_mat[0,1]),(covar_mat[0,0]-covar_mat[1,1]))
-            # apply rotation to diagonalize the matrix
-            Rot_mat = np.zeros((2,2))
-            Rot_mat[0,0:2] = [np.cos(angle), np.sin(angle)]
-            Rot_mat[1,0:2] = [-np.sin(angle), np.cos(angle)]
-            diag_covar_mat = Rot_mat @ covar_mat @ Rot_mat.T 
-
-            semidiam_x = np.sqrt(diag_covar_mat[0,0])
-            semidiam_y = np.sqrt(diag_covar_mat[1,1])
-
-            r = Rotation.from_euler('z', - angle) # minus sign cause we want the rotation that will bring the diagonalized covar back to the rael one
-
-            #produce new marker
-            marker = Marker()
-
-            marker.header.frame_id = "map"
-            marker.header.stamp = rospy.Time.now()
-
-            # set shape, Arrow: 0; Cube: 1 ; Sphere: 2 ; Cylinder: 3 ; LINE_STRIP: 4
-            marker.type = 3
-            marker.id = i
-
-            # Set the scale of the marker
-            marker.scale.x = semidiam_x * sigma_interval * 2 # times 2 because this sets the "diameter"
-            marker.scale.y = semidiam_y * sigma_interval * 2
-            marker.scale.z = 0.001
-
-            # Set the color
-            marker.color.r = rgba[0] / 256
-            marker.color.g = rgba[1] / 256
-            marker.color.b = rgba[2] / 256
-            marker.color.a = rgba[3]
-
-            # Set the pose of the marker
-            marker.pose.position.x = output_array[i, 3]
-            marker.pose.position.y = output_array[i, 4]
-            marker.pose.position.z = 0
-            marker.pose.orientation.x = r.as_quat()[0]
-            marker.pose.orientation.y = r.as_quat()[1]
-            marker.pose.orientation.z = r.as_quat()[2]
-            marker.pose.orientation.w = r.as_quat()[3]
-
-            # assign to array
-            marker_array.markers.append(marker)
-
-
-        #marker.points = points_list
-
-        
-
-
-
-
-        return  marker_array
-
-
 
     def safety_value_subscriber_callback(self, msg):
         self.safety_value = msg.data
-
 
     def vicon_subscriber_callback(self,msg):
 
@@ -1099,7 +951,6 @@ class MPCC_controller_class():
             self.x_y_yaw_state = [msg.pose.pose.position.x, msg.pose.pose.position.y, yaw]
 
 
-
         
         self.pose_msg_time = msg.header.stamp
 
@@ -1118,9 +969,6 @@ class MPCC_controller_class():
 
 
 
-
-
-
 if __name__ == '__main__':
     try:
         # define where to find complied solvers
@@ -1128,14 +976,17 @@ if __name__ == '__main__':
         rospy.init_node('MPCC_node', anonymous=False)
         global_comptime_publisher = rospy.Publisher('GLOBAL_comptime', Float32, queue_size=1)
 
+        # define controller rate
+        dt_controller_rate = 0.1
+
         #set up vehicle controllers
         #car 1
         car_number_1 = 1
-        vehicle_1_controller = MPCC_controller_class(car_number_1) 
+        vehicle_1_controller = MPCC_controller_class(car_number_1,dt_controller_rate) 
 
         # start control loop
-        dt = 0.1
-        rate = rospy.Rate(1 / dt)
+        
+        rate = rospy.Rate(1 / dt_controller_rate)
         #NOTE that this rate is the rate to send out ALL control imputs to all vehicles
 
         vehicle_controllers_list = [vehicle_1_controller] # , vehicle_3_controller

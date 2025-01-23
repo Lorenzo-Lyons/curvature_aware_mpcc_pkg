@@ -1,46 +1,5 @@
 import numpy as np
 from scipy.interpolate import CubicSpline
-from forcespro.modelling import InterpolationFit
-
-def generate_splines_4_forces(s_4_local_path, x_4_local_path, y_4_local_path):
-    # create spline for path
-    c_x = InterpolationFit(s_4_local_path, x_4_local_path)
-    c_y = InterpolationFit(s_4_local_path, y_4_local_path)
-
-
-
-    # --- evaluate first derivatives ---
-    # we now also need to specify the curve derivatives
-    ds = np.diff(s_4_local_path)
-    dx = np.diff(x_4_local_path)
-    dy = np.diff(y_4_local_path)
-
-    dev_x = dx / ds
-    dev_y = dy / ds
-
-    # make sure the norm of the dev vector is 1
-    norm_dev = np.sqrt(dev_x ** 2 + dev_y ** 2)
-
-    #renormalize to make shure the norm is 1
-    dev_x_renormalized = dev_x / norm_dev
-    dev_y_renormalized = dev_y / norm_dev
-
-    c_dev_x = InterpolationFit(s_4_local_path[:-1], dev_x_renormalized)
-    c_dev_y = InterpolationFit(s_4_local_path[:-1], dev_y_renormalized)
-
-
-    # --- evaluate cuvature radius and second derivatives ---
-    ddev_x = np.diff(dev_x_renormalized)
-    ddev_y = np.diff(dev_y_renormalized)
-
-    dev2_x = ddev_x / ds[:-1]
-    dev2_y = ddev_y / ds[:-1]
-
-    # second derivative splines
-    c_ddev_x = InterpolationFit(s_4_local_path[:-2], dev2_x)
-    c_ddev_y = InterpolationFit(s_4_local_path[:-2], dev2_y)
-
-    return c_x, c_y, c_dev_x, c_dev_y, c_ddev_x, c_ddev_y
 
 
 

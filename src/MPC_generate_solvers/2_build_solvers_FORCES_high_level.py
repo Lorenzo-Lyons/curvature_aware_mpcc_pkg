@@ -4,7 +4,7 @@ from functions_for_solver_generation import generate_low_level_solver_ocp, gener
 
 
 # select the solver to build MPCC or CAMPCC
-MPC_algorithm = 'CAMPCC' # 'MPCC' or 'CAMPCC'
+MPC_algorithm = 'MPCC' # 'MPCC' or 'CAMPCC'
 
 # instantiate the class
 solver_maker_obj = generate_high_level_path_planner_ocp(MPC_algorithm)
