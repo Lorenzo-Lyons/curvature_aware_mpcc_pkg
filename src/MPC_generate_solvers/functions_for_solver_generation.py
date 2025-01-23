@@ -165,6 +165,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         codeoptions.overwrite = 1 # 0 never, 1 always, 2 (Defaul) ask
 
         codeoptions.solvemethod = 'SQP_NLP' # 'PDIP_NLP' # changing to non linear primal dual method  'SQP_NLP'
+        codeoptions.sqp_nlp.reg_hessian = 1e-5  # regularization of hessian (default is 5 * 10^(-9))
         return model,codeoptions
 
     def unpack_state(self,z):
@@ -192,7 +193,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         return V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k
     
 
-    def objective(self,pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u,qt_rot,yaw):
+    def objective(self,pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u):
         # stage cost
         if self.MPC_algorithm == 'MPCC':
             err_lag_squared = ((pos_x - ref_x) *  np.cos(ref_heading)  + (pos_y - ref_y) * np.sin(ref_heading)) ** 2
@@ -204,10 +205,10 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
             # cost function for CAMPCC
             # penalize deviation from the path only since the s_dot integration is much more precise
             err_lat_squared = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
-            dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
-            misalignment = -dot_direction # incentivise alligning with the path
+            # dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
+            # misalignment = -dot_direction # incentivise alligning with the path
             
-            j_path = q_con * err_lat_squared + qt_rot * misalignment
+            j_path = q_con * err_lat_squared #+ qt_rot * misalignment
         
         j = j_path + q_u * u_yaw_dot ** 2 + 100 * slack**2 
 
@@ -216,16 +217,16 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
     def objective_forces(self, z, p):
         u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(z)
         V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(p)
-        return self.objective(pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u,qt_rot,yaw)
+        return self.objective(pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u)
 
-    def objective_terminal_cost(self, ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot,V_target,s):
+    def objective_terminal_cost(self, ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot):
         # terminal cost
         dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
         misalignment = -dot_direction # incentivise alligning with the path
         # higher penalty costs on v and path tracking, plus an dditional penalty for not alligning with the path at the end
         err_pos_squared_t = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
-        j_term_pos =    qt_pos * err_pos_squared_t# + \
-                        #qt_rot * misalignment
+        j_term_pos =    qt_pos * err_pos_squared_t + \
+                        qt_rot * misalignment
         
         # if self.MPC_algorithm == 'CAMPCC':
         #     s_target_t = self.time_horizon * V_target
@@ -238,7 +239,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
     def objective_terminal_forces(self, z, p):
         u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(z)
         V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(p)
-        return self.objective_terminal_cost(ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot,V_target,s)
+        return self.objective_terminal_cost(ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot)
 
 
     def high_level_planner_continous_dynamics(self,s,local_path_length,labels_k,V_target,ref_x,ref_y,ref_heading,u_yaw_dot,pos_x,pos_y,yaw):
