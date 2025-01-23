@@ -201,10 +201,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         else:
             # cost function for CAMPCC
             # penalize deviation from the path only since the s_dot integration is much more precise
-            err_lat_squared = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
-            # dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
-            # misalignment = -dot_direction # incentivise alligning with the path
-            
+            err_lat_squared = (pos_x - ref_x)**2 + (pos_y - ref_y)**2            
             j_path = q_con * err_lat_squared #+ qt_rot * misalignment
         
         j = j_path + q_u * u_yaw_dot ** 2 + 100 * slack**2 
@@ -225,12 +222,6 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         j_term_pos =    qt_pos * err_pos_squared_t + \
                         qt_rot * misalignment
         
-        # if self.MPC_algorithm == 'CAMPCC':
-        #     s_target_t = self.time_horizon * V_target
-        #     j_term = j_term_pos + qt_rot * (s - s_target_t)**2
-        # else:
-        #     j_term = j_term_pos
-
         return j_term_pos
     
     def objective_terminal_forces(self, z, p):
@@ -373,7 +364,8 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         self.solver_name_acados = 'low_level_acados_' + dynamic_model # 'dynamic_bicycle', 'kinematic_bicycle', 'SVGP'
         self.nx = 6
         self.nu = 3
-        self.n_parameters = 12
+        self.n_parameters = 14
+        self.n_inequality_constraints = 1
 
         self.solver_name_forces = 'low_level_forces_' + dynamic_model # 'dynamic_bicycle', 'kinematic_bicycle', 'SVGP'
         
@@ -398,7 +390,7 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         # -----  extract named variables for function definitions ----
         z = vertcat(model.u,model.x)
         th_input,st_input,slack, pos_x,pos_y,yaw,vx,vy, w = self.unpack_state(z)
-        V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, slack_p_1, q_acc,x_ref, y_ref, yaw_ref = self.unpack_parameters(model.p)
+        V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, q_acc, x_ref, y_ref, yaw_ref, x_path, y_path, lane_width = self.unpack_parameters(model.p)
         # -----------------------------------------------------------
 
         #model.f_expl_expr = self.dynamic_constraint(th_input,st_input,yaw,vx) # now just kinematic bicycle
@@ -418,7 +410,7 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
 
         # stage-wise cost
         ocp.model.cost_expr_ext_cost  =  self.objective(th_input,st_input,slack, pos_x,pos_y,yaw,vx,vy,w,\
-                                                                x_ref, y_ref, yaw_ref,V_target,q_v, q_pos, q_rot, q_u, slack_p_1,q_acc)
+                                                                x_ref, y_ref, yaw_ref,V_target,q_v, q_pos, q_rot, q_u,q_acc)
         # terminal cost
         ocp.model.cost_expr_ext_cost_e =  self.objective_terminal_cost(pos_x,pos_y,yaw,vx,x_ref, y_ref, yaw_ref,V_target,q_v, qt_pos, qt_rot)
         
@@ -428,6 +420,12 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         ocp.constraints.lbu = np.array([0,-1, 0])
         ocp.constraints.ubu = np.array([+1,+1, 100]) # high value for slack variable
         ocp.constraints.idxbu = np.array([0, 1, 2])
+
+        # define lane boundary constraints
+        ocp.model.con_h_expr = self.lane_boundary_constraint(pos_x,pos_y,x_path,y_path,slack,lane_width)  # Define h(x, u)
+        ocp.constraints.lh = np.array([0.0])  # Lower bound (h_min)
+        ocp.constraints.uh = np.array([1000])  # Upper bound (h_max)
+
 
         # Initial state constraint
         ocp.constraints.x0 = np.zeros(self.nx)  # This is a default value, it will be updated at runtime
@@ -492,9 +490,10 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         
 
         # Set non linear constraints
-        model.nh = 0
-        model.hu = np.array([])
-        model.hl = np.array([])
+        model.nh = self.n_inequality_constraints
+        model.ineq = self.lane_boundary_constraint_forces
+        model.hl = np.array([0.0])
+        model.hu = np.array([1000.0])  # upper bound on inequality constraints
 
 
         # Define solver options
@@ -554,13 +553,15 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         q_u =        p[4]
         qt_pos =     p[5]             # terminal cost (position relative to final path direction)
         qt_rot =     p[6]             # (orientation relative to final path direction)
-        slack_p_1 =  p[7]       # slack cost tuning weight
-        q_acc =      p[8]            # acceleration cost tuning weight
-        x_ref =      p[9]            # reference position x
-        y_ref =      p[10]           # reference position y
-        yaw_ref =    p[11]         # reference yaw
+        q_acc =      p[7]            # acceleration cost tuning weight
+        x_ref =      p[8]            # reference position x
+        y_ref =      p[9]           # reference position y
+        yaw_ref =    p[10]         # reference yaw
+        x_path  =    p[11]         # path x
+        y_path  =    p[12]         # path y
+        lane_width = p[13]         # lane width
 
-        return V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, slack_p_1, q_acc, x_ref, y_ref, yaw_ref
+        return V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, q_acc, x_ref, y_ref, yaw_ref, x_path, y_path, lane_width
 
 
     def produce_xdot(self,yaw,vx,vy,w,acc_x,acc_y,acc_w):
@@ -655,7 +656,7 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
 
 
     def objective(self,th_input,st_input,slack, pos_x,pos_y,yaw,vx,vy,w,\
-                            x_ref, y_ref, yaw_ref,V_target,q_v, q_pos, q_rot, q_u, slack_p_1, q_acc):
+                            x_ref, y_ref, yaw_ref,V_target,q_v, q_pos, q_rot, q_u, q_acc):
         
         error_position_sqrd = (pos_x - x_ref)**2 + (pos_y - y_ref)**2
         error_heading_sqrd = (yaw - yaw_ref)**2
@@ -663,13 +664,10 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         # evalaute acceleration to penalize it
 
         # from kinemaitc bicycle model
-        steering_angle = self.steering_2_steering_angle(st_input,self.a_s_self,self.b_s_self,self.c_s_self,self.d_s_self,self.e_s_self)
         Fx_wheels = self.motor_force(th_input,vx,self.a_m_self,self.b_m_self,self.c_m_self)\
                     + self.rolling_friction(vx,self.a_f_self,self.b_f_self,self.c_f_self,self.d_f_self)
-                    #+ self.F_friction_due_to_steering(steering_angle,vx,self.a_stfr_self,self.b_stfr_self,self.d_stfr_self,self.e_stfr_self)
-        
+                    
         acc_x =  Fx_wheels / self.m_self 
-
 
 
         j = q_v * (vx - V_target) ** 2 + \
@@ -677,7 +675,7 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
             q_rot * error_heading_sqrd +\
             q_u * st_input ** 2 +\
             q_u * th_input ** 2 +\
-            slack_p_1 * slack ** 2+\
+            100 * slack ** 2+\
             q_acc * acc_x ** 2
         
         return j 
@@ -693,17 +691,24 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         return  j_term
 
     def objective_forces(self,z,p):
-        V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, slack_p_1, q_acc,x_ref, y_ref, yaw_ref = self.unpack_parameters(p) 
+        V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, q_acc, x_ref, y_ref, yaw_ref, x_path, y_path, lane_width = self.unpack_parameters(p) 
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w = self.unpack_state(z)
         return self.objective(th_input,st_input,slack, pos_x,pos_y,yaw,vx,vy,w,\
-                            x_ref, y_ref, yaw_ref,V_target,q_v, q_pos, q_rot, q_u, slack_p_1,q_acc)
+                            x_ref, y_ref, yaw_ref,V_target,q_v, q_pos, q_rot, q_u,q_acc)
 
 
     def objective_terminal_forces(self,z,p):
-        V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, slack_p_1, q_acc, x_ref, y_ref, yaw_ref = self.unpack_parameters(p) 
+        V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, q_acc, x_ref, y_ref, yaw_ref, x_path, y_path, lane_width = self.unpack_parameters(p) 
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w = self.unpack_state(z)
         return self.objective_terminal_cost(pos_x,pos_y,yaw,vx, x_ref, y_ref, yaw_ref,V_target,q_v, qt_pos, qt_rot)
+    
+    def lane_boundary_constraint(self,pos_x,pos_y,ref_x,ref_y,slack,lane_width):
+        return ((lane_width+slack)/2)**2 - ((pos_x - ref_x)**2  + (pos_y - ref_y)**2)  
 
+    def lane_boundary_constraint_forces(self,z, p):
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w = self.unpack_state(z)
+        V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, q_acc, x_ref, y_ref, yaw_ref, x_path, y_path, lane_width = self.unpack_parameters(p)
+        return np.array([self.lane_boundary_constraint(pos_x,pos_y,x_path,y_path,slack,lane_width)])
 
     def produce_X0(self,V_target, output_array_high_level):
         # Initial guess 

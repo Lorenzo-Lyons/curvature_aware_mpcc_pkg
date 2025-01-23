@@ -118,7 +118,7 @@ for i in range(solver_maker_obj.N+1):
 
 
 # now change the initial condition and solve again a number of times to get some statistics out
-n_tries = 10 #10000
+n_tries = 10 
 solver_time_vec = np.zeros(n_tries)
 # set random seed
 np.random.seed(0)
@@ -205,7 +205,7 @@ axes[0,1].set_title('Reference Theta')  # Title as plain text
 axes[0,1].legend()
 
 # add plot of s coordinate over the time
-dt = 1.5 / solver_maker_obj.N
+dt = solver_maker_obj.time_horizon / solver_maker_obj.N
 axes[1,1].plot(np.diff(output_array_high_level[:, 5])/dt, color='darkgreen', marker='o',label='s dot')  # Add color and marker to plot()
 # plot first guess
 axes[1,1].plot(V_target * np.ones(solver_maker_obj.N), color='gray', linestyle='--',label = 'V target')

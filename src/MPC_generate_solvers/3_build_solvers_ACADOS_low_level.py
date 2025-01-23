@@ -16,7 +16,7 @@ from functions_for_solver_generation import generate_low_level_solver_ocp
 
 
 # select the solver to build MPCC or CAMPCC
-dynamic_model = 'kinematic_bicycle' # 'kinematic_bicycle', 'dynamic_bicycle', 'SVGP'
+dynamic_model = 'dynamic_bicycle' # 'kinematic_bicycle', 'dynamic_bicycle', 'SVGP'
 
 # instantiate the class
 ocp_maker_obj = generate_low_level_solver_ocp(dynamic_model)
@@ -64,7 +64,7 @@ from functions_for_solver_generation import generate_high_level_path_planner_ocp
 MPC_algorithm = 'CAMPCC' # 'MPCC' or 'CAMPCC'
 high_level_ocp_maker_obj = generate_high_level_path_planner_ocp(MPC_algorithm)
 ocp = high_level_ocp_maker_obj.produce_ocp()
-path_to_high_level_solver = os.path.join(current_script_dir,'solvers/' + high_level_ocp_maker_obj.solver_name) + '/' + high_level_ocp_maker_obj.solver_name
+path_to_high_level_solver = os.path.join(current_script_dir,'solvers/' + high_level_ocp_maker_obj.solver_name_acados) + '/' + high_level_ocp_maker_obj.solver_name_acados
 high_level_solver = AcadosOcpSolver(ocp, json_file=path_to_high_level_solver + '.json', build=False, generate=False) # this will use a previously compiled solver
 
 
@@ -76,7 +76,7 @@ q_lag_high = 1
 q_u_high = 0.01
 qt_pos_high = 5
 qt_rot_high = 5
-lane_width = 2
+lane_width = 0.1
 R = 0.75
 labels_k_params = -1/R * np.ones(high_level_ocp_maker_obj.n_points_kernelized) # -1.5
 labels_k_params[:10] = 0 # go straight at the beginning
@@ -174,11 +174,15 @@ q_acc = 0.1
 
 
 # put all parameters together
+# output_array_high_level = u_yaw slack x y yaw s ref_x ref_y ref_heading
 for i in range(N+1):
     x_ref = output_array_high_level[i,2]
     y_ref = output_array_high_level[i,3]
     yaw_ref = output_array_high_level[i,4]
-    params_i = np.array([V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, slack_p_1, q_acc, x_ref, y_ref, yaw_ref])
+    x_path = output_array_high_level[i,6]
+    y_path = output_array_high_level[i,7]
+
+    params_i = np.array([V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, q_acc, x_ref, y_ref, yaw_ref, x_path, y_path, lane_width])
     solver.set(i, "p", params_i)
 
 
@@ -193,10 +197,10 @@ xinit[3] = V_target # setting to v target
 solver.set(0, "lbx", xinit)
 solver.set(0, "ubx", xinit)
 
-# assign control input bounds
-for k in range(N):
-        solver.set(k, "lbu", np.array([0,-1,0]))  # Lower bound on u at stage
-        solver.set(k, "ubu", np.array([1,1,100]))
+# # assign control input bounds
+# for k in range(N):
+#         solver.set(k, "lbu", np.array([0,-1,0]))  # Lower bound on u at stage
+#         solver.set(k, "ubu", np.array([1,1,100]))
 
 
 
@@ -258,14 +262,19 @@ axes[0, 0].set_title('Throttle')  # Title is plain text
 axes[0, 0].set_ylim([0, 1])
 
 # Plot steering 
-axes[0, 1].plot(output_array_low_level[:-1, 1], color='r', marker='o')  # Add marker to plot()
-axes[0, 1].set_title('Steering')  # Correctly use set_title
-axes[0, 1].set_ylim([-1, 1])
+axes[1, 0].plot(output_array_low_level[:-1, 1], color='r', marker='o')  # Add marker to plot()
+axes[1, 0].set_title('Steering')  # Correctly use set_title
+axes[1, 0].set_ylim([-1, 1])
+
+# plot slack
+axes[2, 0].plot(output_array_low_level[:-1, 2], color='r', marker='o')  # Add marker to plot()
+axes[2, 0].set_title('Slack')  # Correctly use set_title
+axes[2, 0].set_ylim([0, 1])
 
 # Plot velocity 
-axes[1, 0].plot(output_array_low_level[:, 6], color='b', marker='o')  # Add color and marker to plot()
-axes[1, 0].set_title('Vx State Trajectory')  # Title as plain text
-axes[1, 0].set_ylim([0, 5])
+axes[0, 1].plot(output_array_low_level[:, 6], color='b', marker='o')  # Add color and marker to plot()
+axes[0, 1].set_title('Vx State Trajectory')  # Title as plain text
+axes[0, 1].set_ylim([0, 5])
 
 # Plot velocity 
 axes[1, 1].plot(output_array_low_level[:, 7], color='b', marker='o')  # Add color and marker to plot()
@@ -278,149 +287,3 @@ axes[2, 1].set_title('W State Trajectory')  # Title as plain text
 axes[2, 1].set_ylim([-5, 5])
 
 plt.show()
-
-
-# print("Optimal state trajectory:", x_solution)
-# print("Optimal control trajectory:", u_solution)
-
-
-
-
-# now change the initial condition and solve again a number of times to get some statistics out
-n_tries = 100
-solver_time_vec = np.zeros(n_tries)
-for i in range(n_tries):
-    # set initial condition
-    xinit = np.zeros(solver_attributes_obj.nx) # all zeros
-
-    # pick random initial condition on y and yaw
-    xinit[1] =  np.random.uniform(-0.05,0.05)
-    xinit[2] = np.random.uniform(-np.pi/6,np.pi/6)
-    solver.set(0, "lbx", xinit)
-    solver.set(0, "ubx", xinit)
-
-    # solve problem ACADOS_SILENT=ON
-    status = solver.solve()
-
-    if status != 0:
-        print(f"Solver failed with status {status}")
-    else:
-        pass
-
-    #solver.print_statistics()
-    total_time = solver.get_stats('time_tot')
-    solver_time_vec[i] = total_time
-    #print(f"Total solver time: {total_time:.6f} seconds")
-
-
-
-
-
-
-
-import matplotlib.pyplot as plt
-plt.figure()
-plt.plot(solver_time_vec, label='Solver time')
-#plot a dashed line at 0.1s comp time
-plt.plot(np.ones(n_tries)*0.1, label='0.1s comp time', linestyle='--')
-plt.title('Solver time for different initial conditions')
-plt.xlabel('Iteration')
-plt.ylabel('Solver time (s)')
-plt.grid(True)
-plt.legend()
-
-
-
-
-
-
-
-
-
-
-
-
-# re-avalaulte path according to how the solver would do it for later plot
-from path_track_definitions import generate_fixed_path_quantities
-# generate fixed term for the kernelized path
-Kxx_inv, normalized_s_4_kernel_path = generate_fixed_path_quantities(build_solver_obj.solver_attributes_obj.path_lengthscale,
-                                                                                build_solver_obj.solver_attributes_obj.lambda_val,
-                                                                                build_solver_obj.solver_attributes_obj.n_points_kernelized)
-
-
-Functions_for_solver_generation_obj = Functions_for_solver_generation()
-# s_vec = np.linspace(0,local_path_length,N)
-# x_path = np.zeros(N)
-# y_path = np.zeros(N)
-# x_d_path = np.zeros(N)
-# y_d_path = np.zeros(N)
-# Rx_path = np.zeros(N)
-# Ry_path = np.zeros(N)
-# Rz_path = np.zeros(N)
-# for ii in range(N):
-#     k = Functions_for_solver_generation_obj.evaluate_path_quantities_acados(np.array([s_vec[ii]]), normalized_s_4_kernel_path, Kxx_inv,\
-#                                     labels_k ,local_path_length,\
-#                                 solver_attributes_obj.path_lengthscale,solver_attributes_obj.n_points_kernelized)
-    
-
-#     # assign quantities
-#     x_path[ii] = Cx_out
-#     y_path[ii] = Cy_out
-#     x_d_path[ii] = x_Cdev
-#     y_d_path[ii] = y_Cdev
-#     Rx_path[ii] = Rx
-#     Ry_path[ii] = Ry
-#     Rz_path[ii] = Rz
-
-
-
-
-
-
-# Assuming u_solution and x_solution are already defined as NumPy arrays
-
-
-
-
-
-
-plt.figure()
-# Plot x-y trajectory (bottom-right subplot)
-plt.plot(x_solution[:, 0], x_solution[:, 1], color='g', marker='o')  # x and y states
-# axes[1, 1].plot(labels_path_x, labels_path_y, color='gray', linestyle='none',marker='o',markersize=2)  # x and y states
-# # plot reference path
-# axes[1, 1].plot(x_path, y_path, label='Path', color='k',alpha=0.3)
-
-# plot the reference path as it comes out of the solver
-plt.plot(x_solution[:,-3], x_solution[:,-2], label='Path from solver', color='violet',alpha=1,marker='o',markersize=2)
-
-# # Plot the direction of the first derivative as arrows
-# scaling_factor = 0.1  # Adjust to scale arrow lengths for better visibility
-# for i in range(len(x_path)):
-#     axes[1, 1].arrow(
-#         x_path[i], y_path[i],
-#         scaling_factor * x_d_path[i], scaling_factor * y_d_path[i],
-#         head_width=0.025, head_length=0.05, fc='red', ec='red'
-#     )
-
-plt.grid(True)
-plt.title('x-y Trajectory')  # Title for the x-y trajectory
-plt.xlabel('x')  # Label for x-axis
-plt.ylabel('y')  # Label for y-axis
-# plt.xlim([0, 4])  # Set x-axis limits
-# plt.ylim([-3, 1])  # Set y-axis limits
-plt.axis('equal')  # Equal scaling for x and y axes
-
-
-
-# Adjust layout
-plt.tight_layout()
-
-# Show the plot
-plt.show()
-
-
-
-
-
-

@@ -73,7 +73,7 @@ class MPC_GUI_manager:
             self.vehicles_list[i].qt_pos = config['qt_pos']
             self.vehicles_list[i].qt_rot = config['qt_rot']
             self.vehicles_list[i].q_acc = config['q_acc']
-            self.vehicles_list[i].l_width = config['l_width']
+            self.vehicles_list[i].lane_width = config['lane_width']
             self.vehicles_list[i].minimal_plotting = config['minimal_plotting']
             self.vehicles_list[i].delay_compensation = config['delay_compensation']
             self.vehicles_list[i].solver_software = config['Solver_software']
@@ -422,7 +422,7 @@ class MPCC_controller_class():
         self.slack_p_1 = 1000  # controls the cost of the slack variable
         
         # constraint related parameters SORT THIS OUT LATER
-        self.l_width = 0.6  # width of lane
+        self.lane_width = 0.6  # width of lane
         
 
 
@@ -498,7 +498,7 @@ class MPCC_controller_class():
         xinit[2] = yaw_init_rot
 
         # define parameters
-        params_i = np.array([V_target, local_path_length, self.q_con, self.q_lag, self.q_u_yaw_rate, self.qt_pos_high, self.qt_rot_high,self.l_width,*labels_k])
+        params_i = np.array([V_target, local_path_length, self.q_con, self.q_lag, self.q_u_yaw_rate, self.qt_pos_high, self.qt_rot_high,self.lane_width,*labels_k])
         param_array = np.zeros((self.high_level_solver_generator_obj.N+1, self.high_level_solver_generator_obj.n_parameters))
         for i in range(self.high_level_solver_generator_obj.N+1):
             param_array[i,:] = params_i
@@ -546,13 +546,15 @@ class MPCC_controller_class():
 
         # define parameters
         param_array = np.zeros((self.low_level_solver_generator_obj.N+1, self.low_level_solver_generator_obj.n_parameters))
-        params_base = np.array([V_target, self.q_v, self.q_pos, self.q_rot, self.q_u, self.qt_pos, self.qt_rot, self.slack_p_1, self.q_acc])
+        params_base = np.array([V_target, self.q_v, self.q_pos, self.q_rot, self.q_u, self.qt_pos, self.qt_rot, self.q_acc])
         for i in range(self.low_level_solver_generator_obj.N+1):
             x_ref = output_array_high_level[i,2]
             y_ref = output_array_high_level[i,3]
             yaw_ref = output_array_high_level[i,4]
+            x_path = output_array_high_level[i,6]
+            y_path = output_array_high_level[i,7]
             # append ref positions
-            param_array[i,:] = np.array([*params_base, x_ref, y_ref, yaw_ref])
+            param_array[i,:] = np.array([*params_base, x_ref, y_ref, yaw_ref, x_path, y_path, self.lane_width])
         
         # define first guess
         X0_array = self.low_level_solver_generator_obj.produce_X0(V_target, output_array_high_level)
@@ -715,10 +717,10 @@ class MPCC_controller_class():
             x_Cdev = np.cos(output_array_high_level[ii,-1])
             y_Cdev = np.sin(output_array_high_level[ii,-1])
 
-            V_x_left = (self.l_width/2) * x_Cdev
-            V_y_left = ( self.l_width/2) * y_Cdev
-            V_x_right = (self.l_width/2) * x_Cdev
-            V_y_right = (self.l_width/2) * y_Cdev
+            V_x_left = (self.lane_width/2) * x_Cdev
+            V_y_left = ( self.lane_width/2) * y_Cdev
+            V_x_right = (self.lane_width/2) * x_Cdev
+            V_y_right = (self.lane_width/2) * y_Cdev
 
             x_left_lane_boundary[ii] = output_array_high_level[ii,6] - V_y_left
             y_left_lane_boundary[ii] = output_array_high_level[ii,7] + V_x_left

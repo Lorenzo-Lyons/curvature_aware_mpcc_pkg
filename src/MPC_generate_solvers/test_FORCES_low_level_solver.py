@@ -34,7 +34,7 @@ from functions_for_solver_generation import generate_high_level_path_planner_ocp
 MPC_algorithm = 'MPCC' # 'MPCC' or 'CAMPCC'
 high_level_ocp_maker_obj = generate_high_level_path_planner_ocp(MPC_algorithm)
 ocp = high_level_ocp_maker_obj.produce_ocp()
-path_to_high_level_solver = os.path.join(current_script_dir,'solvers/' + high_level_ocp_maker_obj.solver_name) + '/' + high_level_ocp_maker_obj.solver_name
+path_to_high_level_solver = os.path.join(current_script_dir,'solvers/' + high_level_ocp_maker_obj.solver_name_acados) + '/' + high_level_ocp_maker_obj.solver_name_acados
 high_level_solver = AcadosOcpSolver(ocp, json_file=path_to_high_level_solver + '.json', build=False, generate=False) # this will use a previously compiled solver
 
 
@@ -135,9 +135,8 @@ q_rot = 1
 q_u = 0.01
 qt_pos = 10
 qt_rot = 10
-slack_p_1 = 1
 q_acc = 0.1
-params_base = np.array([V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, slack_p_1, q_acc])
+params_base = np.array([V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, q_acc])
 
 param_array = np.zeros((low_level_solver_maker_obj.N, low_level_solver_maker_obj.n_parameters))
 # put all parameters together
@@ -145,8 +144,10 @@ for i in range(N):
     x_ref = output_array_high_level[i,2]
     y_ref = output_array_high_level[i,3]
     yaw_ref = output_array_high_level[i,4]
+    x_path = output_array_high_level[i,6]
+    y_path = output_array_high_level[i,7]
     # append ref positions
-    param_array[i,:] = np.array([*params_base, x_ref, y_ref, yaw_ref])
+    param_array[i,:] = np.array([*params_base, x_ref, y_ref, yaw_ref, x_path, y_path, lane_width])
 param_array = param_array.ravel() # unpack row-wise
 
 
