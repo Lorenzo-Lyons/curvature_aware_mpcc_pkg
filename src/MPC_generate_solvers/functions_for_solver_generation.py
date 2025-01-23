@@ -118,7 +118,8 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
         # set fixed input bounds since they will not change at runtime
         # generate inf upper and lower bounds for the inputs and states
-        model.lb = np.array([-self.max_yaw_rate, 0.0   , -1000, -1000,-1000,-1000,-1000,-1000,-1000])  # lower bound on inputs
+                            #  u_yaw_dot,       slack, pos_x, pos_y,yaw,   s,  ref_x, ref_y, ref_heading
+        model.lb = np.array([-self.max_yaw_rate, 0.0 , -1000, -1000,-1000,-0.2,-1000,-1000,-1000])  # lower bound on inputs
         model.ub = np.array([+self.max_yaw_rate, +100, +1000, +1000,+1000,+1000,+1000,+1000,+1000])  # upper bound on inputs
 
         # Set objective
@@ -163,7 +164,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         #set overwrite behviour
         codeoptions.overwrite = 1 # 0 never, 1 always, 2 (Defaul) ask
 
-        codeoptions.solvemethod = 'PDIP_NLP' # 'PDIP_NLP' # changing to non linear primal dual method  'SQP_NLP'
+        codeoptions.solvemethod = 'SQP_NLP' # 'PDIP_NLP' # changing to non linear primal dual method  'SQP_NLP'
         return model,codeoptions
 
     def unpack_state(self,z):
@@ -191,45 +192,53 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         return V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k
     
 
-    def objective(self,pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u):
+    def objective(self,pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u,qt_rot,yaw):
         # stage cost
         if self.MPC_algorithm == 'MPCC':
             err_lag_squared = ((pos_x - ref_x) *  np.cos(ref_heading)  + (pos_y - ref_y) * np.sin(ref_heading)) ** 2
             err_lat_squared = ((pos_x - ref_x) * -np.sin(ref_heading) + (pos_y - ref_y) * np.cos(ref_heading)) ** 2
 
-            j = q_con * err_lat_squared +\
-                q_lag * err_lag_squared +\
-                q_u * u_yaw_dot ** 2 +\
-                100 * slack**2
+            j_path = q_con * err_lat_squared +\
+                     q_lag * err_lag_squared
         else:
             # cost function for CAMPCC
             # penalize deviation from the path only since the s_dot integration is much more precise
             err_lat_squared = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
-            j = q_con * err_lat_squared +\
-                q_u * u_yaw_dot ** 2 +\
-                100 * slack**2
+            dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
+            misalignment = -dot_direction # incentivise alligning with the path
+            
+            j_path = q_con * err_lat_squared + qt_rot * misalignment
+        
+        j = j_path + q_u * u_yaw_dot ** 2 + 100 * slack**2 
 
         return j
     
     def objective_forces(self, z, p):
         u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(z)
         V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(p)
-        return self.objective(pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u)
+        return self.objective(pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u,qt_rot,yaw)
 
-    def objective_terminal_cost(self, ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot):
+    def objective_terminal_cost(self, ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot,V_target,s):
         # terminal cost
         dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
         misalignment = -dot_direction # incentivise alligning with the path
         # higher penalty costs on v and path tracking, plus an dditional penalty for not alligning with the path at the end
         err_pos_squared_t = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
-        j_term =    qt_pos * err_pos_squared_t + \
-                    qt_rot * misalignment
-        return j_term
+        j_term_pos =    qt_pos * err_pos_squared_t# + \
+                        #qt_rot * misalignment
+        
+        # if self.MPC_algorithm == 'CAMPCC':
+        #     s_target_t = self.time_horizon * V_target
+        #     j_term = j_term_pos + qt_rot * (s - s_target_t)**2
+        # else:
+        #     j_term = j_term_pos
+
+        return j_term_pos
     
     def objective_terminal_forces(self, z, p):
         u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(z)
         V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(p)
-        return self.objective_terminal_cost(ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot)
+        return self.objective_terminal_cost(ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot,V_target,s)
 
 
     def high_level_planner_continous_dynamics(self,s,local_path_length,labels_k,V_target,ref_x,ref_y,ref_heading,u_yaw_dot,pos_x,pos_y,yaw):
@@ -267,8 +276,9 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         else:
             v_tan = V_target * np.cos(yaw - ref_heading)
             p = (pos_x - ref_x) * np.sin(ref_heading)  + (pos_y - ref_y) * -np.cos(ref_heading)
-
-            projection_ratio = 1 / (1+p*k )
+            den_corrected = self.soft_min(1+p*k,0.3)
+            projection_ratio = 1 / den_corrected
+            #projection_ratio = 1 / (1+p*k)
 
             s_dot = v_tan * projection_ratio
 
@@ -278,6 +288,10 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
         state_dot = [x_dot,y_dot, yaw_dot, s_dot ,x_ref_dot, y_ref_dot, ref_heading_dot]
         return state_dot
+    
+    def soft_min(self, x, min_val):
+        sharpness = 10
+        return min_val + 0.5*(1 + np.tanh(sharpness*(x-min_val)))*(x-min_val)
     
     def high_level_planner_continous_dynamics_forces(self, x, u, p):
         z = casadi.vertcat(u, x)
