@@ -51,6 +51,11 @@ roslaunch curvature_aware_mpcc_pkg mpc_controller.launch
 
 Now select the deisred MPC options from the GUI, select the pygame "safety window" and press the spacebar.
 
+<div align="center">
+  <img src="./readme_images/CAMPCC_simulation.gif" alt="Demo of the CA-MPCC simualtion">
+</div>
 
+## Known issues
+The ACADOS version of the high level CA-MPCC algorithm and the ACADOS version of the low level dynamic bicycle model solvers do not work well for high speeds.
 
 
