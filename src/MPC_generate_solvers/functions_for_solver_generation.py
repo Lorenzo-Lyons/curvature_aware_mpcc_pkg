@@ -20,11 +20,11 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
         self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
         self.time_horizon = 1.5
-        self.N = 15 # stages
+        self.N = 30 # stages
         self.max_yaw_rate = 10 # based on w = V / R = k * V so 2 * V is the maximum yaw rate 
         self.nx = 7
         self.nu = 2
-        self.n_parameters = 8 + self.n_points_kernelized
+        self.n_parameters = 9 + self.n_points_kernelized
         self.n_inequality_constraints = 1
         
     
@@ -49,7 +49,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(vertcat(model.u,model.x))
 
         # unpack parameters
-        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(model.p)
+        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_k = self.unpack_parameters(model.p)
 
         # assign dynamic constraint
         model.f_expl_expr = vertcat(*self.high_level_planner_continous_dynamics(s,local_path_length,labels_k,V_target,ref_x,ref_y,ref_heading,u_yaw_dot,pos_x,pos_y,yaw)) # make into vertical vector for casadi
@@ -63,8 +63,8 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         ocp.cost.cost_type_e = 'EXTERNAL'
 
         # --- set up the cost functions ---
-        ocp.model.cost_expr_ext_cost  =  self.objective(pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u) 
-        ocp.model.cost_expr_ext_cost_e =  self.objective_terminal_cost(ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot)
+        ocp.model.cost_expr_ext_cost  =  self.objective(pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u,s,qt_s_high) 
+        ocp.model.cost_expr_ext_cost_e =  self.objective_terminal_cost(ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot,s,qt_s_high,V_target)
                 
         # constraints
         #ocp.constraints.constr_type = 'BGH'
@@ -85,16 +85,16 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         ocp.solver_options.hessian_approx = 'EXACT' # GAUSS_NEWTON, EXACT
         ocp.solver_options.integrator_type = 'ERK' # IRK, ERK
         ocp.solver_options.sim_method_num_steps = 1  # Number of sub-steps in each interval for integration purpouses
-        ocp.solver_options.nlp_solver_type = 'SQP' # SQP   SQP_RTI
+        ocp.solver_options.nlp_solver_type = 'SQP_RTI' # SQP   SQP_RTI
         ocp.solver_options.tf = self.time_horizon  # time horizon in seconds
 
         # messing with the convergence criteria
         ocp.solver_options.qp_solver_warm_start = 1 # 0: no warm start, 1: warm start 2 : hot start
         ocp.solver_options.globalization = 'FIXED_STEP' # 'MERIT_BACKTRACKING', 'FIXED_STEP' # fixed is the default
         #ocp.solver_options.nlp_solver_max_iter = 20  # Maximum SQP iterations
-        #ocp.solver_options.qp_solver_iter_max = 20
+        #ocp.solver_options.qp_solver_iter_max = 5
         ocp.solver_options.print_level = 0 # no print
-        ocp.solver_options.tol = 0.001
+        #ocp.solver_options.tol = 0.001
 
         # Initialize parameters with default values (this step is important to avoid dimension mismatch)
         ocp.parameter_values = np.zeros(self.n_parameters)
@@ -150,10 +150,10 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         codeoptions.nlp.stack_parambounds = True  # determines if the parameters can simply be stacked (but not sure exactly what it does)
 
         # set tolerances
-        # codeoptions.nlp.TolStat = 1e-4  # inf norm tol. on stationarity
-        # codeoptions.nlp.TolEq = 1e-5  # tol. on equality constraints
-        # codeoptions.nlp.TolIneq = 1e-5  # tol. on inequality constraints
-        # codeoptions.nlp.TolComp = 1e-5  # tol. on complementarity
+        codeoptions.nlp.TolStat = 1e-6  # inf norm tol. on stationarity
+        codeoptions.nlp.TolEq = 1e-5  # tol. on equality constraints
+        codeoptions.nlp.TolIneq = 1e-5  # tol. on inequality constraints
+        codeoptions.nlp.TolComp = 1e-5  # tol. on complementarity
 
         # set warm start behaviour for dual variables (so always warm start from solver perspective, even if in practice you give it a vector of zeros)
         codeoptions.init = 2  # 0 cold, 1 centered, 2 warm
@@ -162,7 +162,13 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         codeoptions.overwrite = 1 # 0 never, 1 always, 2 (Defaul) ask
 
         codeoptions.solvemethod = 'SQP_NLP' # 'PDIP_NLP' # changing to non linear primal dual method  'SQP_NLP'
+        # NOTE that by default the solver uses a single sqp iteration so you need to increase the number of iterations
+        codeoptions.sqp_nlp.maxqps = 3
         codeoptions.sqp_nlp.reg_hessian = 1e-5  # regularization of hessian (default is 5 * 10^(-9))
+        # codeoptions.sqp_nlp.rti = 1
+        # codeoptions.sqp_nlp.maxSQPit = 5
+
+
         return model,codeoptions
 
     def unpack_state(self,z):
@@ -186,11 +192,12 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         qt_pos = p[5]
         qt_rot = p[6]
         lane_width = p[7]
-        labels_k = p[8:]
-        return V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k
+        qt_s_high = p[8]
+        labels_k = p[9:]
+        return V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_k
     
 
-    def objective(self,pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u):
+    def objective(self,pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u,s,qt_s_high):
         # stage cost
         if self.MPC_algorithm == 'MPCC':
             err_lag_squared = ((pos_x - ref_x) *  np.cos(ref_heading)  + (pos_y - ref_y) * np.sin(ref_heading)) ** 2
@@ -202,7 +209,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
             # cost function for CAMPCC
             # penalize deviation from the path only since the s_dot integration is much more precise
             err_lat_squared = (pos_x - ref_x)**2 + (pos_y - ref_y)**2            
-            j_path = q_con * err_lat_squared #+ qt_rot * misalignment
+            j_path = q_con * err_lat_squared #- qt_s_high * s**2
         
         j = j_path + q_u * u_yaw_dot ** 2 + 100 * slack**2 
 
@@ -210,24 +217,25 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
     
     def objective_forces(self, z, p):
         u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(z)
-        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(p)
-        return self.objective(pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u)
+        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_k = self.unpack_parameters(p)
+        return self.objective(pos_x,pos_y,ref_x,ref_y,ref_heading,u_yaw_dot,slack,q_con,q_lag,q_u,s,qt_s_high)
 
-    def objective_terminal_cost(self, ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot):
+    def objective_terminal_cost(self, ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot,s,qt_s_high,V_target):
         # terminal cost
         dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
         misalignment = -dot_direction # incentivise alligning with the path
         # higher penalty costs on v and path tracking, plus an dditional penalty for not alligning with the path at the end
         err_pos_squared_t = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
         j_term_pos =    qt_pos * err_pos_squared_t + \
-                        qt_rot * misalignment
+                        qt_rot * misalignment+\
+                        - qt_s_high * (s/(self.time_horizon*V_target))**2
         
         return j_term_pos
     
     def objective_terminal_forces(self, z, p):
         u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(z)
-        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(p)
-        return self.objective_terminal_cost(ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot)
+        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_k = self.unpack_parameters(p)
+        return self.objective_terminal_cost(ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot,s,qt_s_high,V_target)
 
 
     def high_level_planner_continous_dynamics(self,s,local_path_length,labels_k,V_target,ref_x,ref_y,ref_heading,u_yaw_dot,pos_x,pos_y,yaw):
@@ -281,7 +289,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
     def high_level_planner_continous_dynamics_forces(self, x, u, p):
         z = casadi.vertcat(u, x)
         u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(z)
-        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(p)
+        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_k = self.unpack_parameters(p)
         return np.array(self.high_level_planner_continous_dynamics(s,local_path_length,labels_k,V_target,ref_x,ref_y,ref_heading,u_yaw_dot,pos_x,pos_y,yaw))
 
     def lane_boundary_constraint(self,pos_x,pos_y,ref_x,ref_y,slack,lane_width):
@@ -289,7 +297,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
     def lane_boundary_constraint_forces(self,z, p):
         u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(z)
-        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, labels_k = self.unpack_parameters(p)
+        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_k= self.unpack_parameters(p)
         return np.array([self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width)])
 
 
@@ -359,7 +367,7 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         self.dynamic_model = dynamic_model
         
         # chose options
-        self.N = 15 # this should match the high level planner (at least for now)
+        self.N = 30 # this should match the high level planner (at least for now)
         self.time_horizon = 1.5
         self.solver_name_acados = 'low_level_acados_' + dynamic_model # 'dynamic_bicycle', 'kinematic_bicycle', 'SVGP'
         self.nx = 6

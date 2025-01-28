@@ -64,8 +64,8 @@ class MPC_GUI_manager:
             self.vehicles_list[i].q_lag = config['q_lag']
             self.vehicles_list[i].q_u_yaw_rate = config['q_u_yaw_rate']
             self.vehicles_list[i].qt_pos_high = config['qt_pos_high']
-            self.vehicles_list[i].qt_rot_high = config['qt_rot_high']
-
+            self.vehicles_list[i].qt_rot_high = config['qt_rot_high'] 
+            self.vehicles_list[i].qt_s_high = config['qt_s_high']
             # low level solver
             self.vehicles_list[i].q_v = config['q_v']
             self.vehicles_list[i].q_pos = config['q_pos']
@@ -410,6 +410,7 @@ class MPCC_controller_class():
         self.q_u_yaw_rate = 0.1  # relative weight of inputs
         self.qt_pos_high = 1  # relative weight of missing end point
         self.qt_rot_high = 1  # relative weight of path allignment
+        self.qt_s_high = 1  # relative weight of progress along the path weight
 
         # mpc terminal cost tuning weights --> j term = qt_pos * err_pos_sqrd + qt_rot * misallignment ** 2
         self.q_pos = 1  # relative weight of missing end point
@@ -498,7 +499,7 @@ class MPCC_controller_class():
         xinit[2] = yaw_init_rot
 
         # define parameters
-        params_i = np.array([V_target, local_path_length, self.q_con, self.q_lag, self.q_u_yaw_rate, self.qt_pos_high, self.qt_rot_high,self.lane_width,*labels_k])
+        params_i = np.array([V_target, local_path_length, self.q_con, self.q_lag, self.q_u_yaw_rate, self.qt_pos_high, self.qt_rot_high,self.lane_width,self.qt_s_high,*labels_k])
         param_array = np.zeros((self.high_level_solver_generator_obj.N+1, self.high_level_solver_generator_obj.n_parameters))
         for i in range(self.high_level_solver_generator_obj.N+1):
             param_array[i,:] = params_i
@@ -511,7 +512,7 @@ class MPCC_controller_class():
             # - set up initial guess and parameters
             x0_array_forces = X0_array_high_level.ravel()
             all_params_array_forces = param_array.ravel()
-            problem_high_leval = {"x0": x0_array_forces, "xinit": xinit, "all_parameters": all_params_array_forces}
+            problem_high_leval = {"x0": x0_array_forces, "xinit": xinit, "all_parameters": all_params_array_forces} 
         else: # ACADOS
 
             # assign initial state
@@ -979,7 +980,7 @@ if __name__ == '__main__':
         global_comptime_publisher = rospy.Publisher('GLOBAL_comptime', Float32, queue_size=1)
 
         # define controller rate
-        dt_controller_rate = 0.1
+        dt_controller_rate = 0.05
 
         #set up vehicle controllers
         #car 1

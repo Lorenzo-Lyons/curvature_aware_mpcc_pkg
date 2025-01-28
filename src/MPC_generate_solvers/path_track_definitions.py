@@ -656,12 +656,12 @@ def raw_track(choice):
 
         # 5
         Checkpoints_x5 = np.linspace(Checkpoints_x4[-1], Checkpoints_x4[-1], n_checkpoints)
-        Checkpoints_y5 = np.linspace(Checkpoints_y4[-1], R+R, n_checkpoints)
+        Checkpoints_y5 = np.linspace(Checkpoints_y4[-1], l_small-R-0.5, n_checkpoints) #R+R
         Checkpoints_k5 = 0 * np.ones(n_checkpoints)
 
         # 6
         Checkpoints_x6 = l_large - 2*R - R + R * np.cos(theta_vec3)
-        Checkpoints_y6 = R + R + R * np.sin(theta_vec3)
+        Checkpoints_y6 = Checkpoints_y5[-1] + R * np.sin(theta_vec3) # R + R
         Checkpoints_k6 = - 1 / R * np.ones(n_checkpoints)
 
         # 7
