@@ -162,6 +162,8 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         codeoptions.overwrite = 1 # 0 never, 1 always, 2 (Defaul) ask
 
         codeoptions.solvemethod = 'SQP_NLP' # 'PDIP_NLP' # changing to non linear primal dual method  'SQP_NLP'
+        # NOTE that by default the solver uses a single sqp iteration so you need to increase the number of iterations
+        codeoptions.sqp_nlp.maxqps = 3
         codeoptions.sqp_nlp.reg_hessian = 1e-5  # regularization of hessian (default is 5 * 10^(-9))
         return model,codeoptions
 
