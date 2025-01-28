@@ -873,23 +873,8 @@ def generate_path_data(track_choice):
     y_4_local_path = np.concatenate((Checkpoints_y[:-1],Checkpoints_y, Checkpoints_y[1:]))
     s_4_local_path = np.concatenate((Checkpoints_s[:-1] -Checkpoints_s[-1],Checkpoints_s, Checkpoints_s[1:] + Checkpoints_s[-1]))
 
-    # R_x_4_local_path = np.concatenate((Checkpoints_Rx[:-1],Checkpoints_Rx, Checkpoints_Rx[1:]))
-    # R_y_4_local_path = np.concatenate((Checkpoints_Ry[:-1],Checkpoints_Ry, Checkpoints_Ry[1:]))
-    # R_z_4_local_path = np.concatenate((Checkpoints_Rz[:-1],Checkpoints_Rz, Checkpoints_Rz[1:]))
-
     k_4_local_path = np.concatenate((Checkpoints_k[:-1],Checkpoints_k, Checkpoints_k[1:]))
     
-
-
-    # smooth out the R localtion
-    # window = 21
-    # R_x_4_local_path = sliding_window_smooth(R_x_4_local_path, window)
-    # R_y_4_local_path = sliding_window_smooth(R_y_4_local_path, window)
-    # R_z_4_local_path = sliding_window_smooth(R_z_4_local_path, window)
-    # # re smooth the R location
-    # R_x_4_local_path = sliding_window_smooth(R_x_4_local_path, window)
-    # R_y_4_local_path = sliding_window_smooth(R_y_4_local_path, window)
-    # R_z_4_local_path = sliding_window_smooth(R_z_4_local_path, window)
 
     window = 5
     k_vals_global_path =  sliding_window_smooth(k_4_local_path, window)
@@ -900,12 +885,6 @@ def generate_path_data(track_choice):
     Ds_back = 1
     Ds_forward = 20    # these distances are before and after 1 lap 
 
-    # #     R_x_vals_global_path,\
-    # # R_y_vals_global_path,\
-    # # R_z_vals_global_path,\
-    # # R_x_4_local_path,\
-    # # R_y_4_local_path,\
-    # # R_z_4_local_path,\
 
     s_vals_global_path,\
     x_vals_global_path,\

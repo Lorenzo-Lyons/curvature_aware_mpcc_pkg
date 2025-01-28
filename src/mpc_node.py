@@ -58,6 +58,11 @@ class MPC_GUI_manager:
         print('‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾')
         
         for i in range(len(self.vehicles_list)):
+            # to check if some values have changed store the old values
+            lane_width_old = self.vehicles_list[i].lane_width
+
+
+
             # high level solver
             self.vehicles_list[i].V_target = config['V_target']
             self.vehicles_list[i].q_con = config['q_con']
@@ -89,14 +94,11 @@ class MPC_GUI_manager:
                                                   self.vehicles_list[i].MPC_algorithm,
                                                   self.vehicles_list[i].dynamic_model) 
             
+            # check if lane width has changed
+            if lane_width_old != self.vehicles_list[i].lane_width:
+                self.vehicles_list[i].produce_global_lane_boundaries_4_rviz()
+            
 
-            if self.vehicles_list[i].save_data == False:
-                try:
-                    #close file when recording is switched off
-                    self.vehicles_list[i].file.close()
-                except:
-                    #print('')
-                    pass
 
 
             print('‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾')
@@ -225,6 +227,8 @@ class MPCC_controller_class():
         rgba = [160, 189, 212, 0.25]
         global_path_message = self.produce_marker_array_rviz(self.x_vals_global_path, self.y_vals_global_path, rgba)
         self.rviz_global_path_publisher.publish(global_path_message)
+        # send out lane boundaries to rviz
+        self.produce_global_lane_boundaries_4_rviz()
 
         # for data saving
         self.safety_value_subscriber = rospy.Subscriber('safety_value', Float32, self.safety_value_subscriber_callback)
@@ -751,6 +755,35 @@ class MPCC_controller_class():
         self.rviz_MPC_path_publisher.publish(rviz_MPCC_path_message)
 
 
+    def produce_global_lane_boundaries_4_rviz(self):
+        dim = len(self.x_4_local_path)
+        # lane boundaries
+        x_left_lane_boundary = np.zeros(dim)
+        y_left_lane_boundary = np.zeros(dim)
+        x_right_lane_boundary = np.zeros(dim)
+        y_right_lane_boundary = np.zeros(dim)
+
+        for ii in range(dim):
+            x_Cdev = self.dx_ds[ii]
+            y_Cdev = self.dy_ds[ii]
+
+            V_x_left = (self.lane_width/2) * x_Cdev
+            V_y_left = ( self.lane_width/2) * y_Cdev
+            V_x_right = (self.lane_width/2) * x_Cdev
+            V_y_right = (self.lane_width/2) * y_Cdev
+
+            x_left_lane_boundary[ii] = self.x_4_local_path[ii] - V_y_left
+            y_left_lane_boundary[ii] = self.y_4_local_path[ii] + V_x_left
+            x_right_lane_boundary[ii] = self.x_4_local_path[ii] + V_y_right
+            y_right_lane_boundary[ii] = self.y_4_local_path[ii] - V_x_right
+
+        # now publish the lane boundaries
+        rgba = [57.0, 81.0, 100.0, 1.0]
+        rviz_left_lane_bound_message = self.produce_marker_array_rviz(x_left_lane_boundary, y_left_lane_boundary,rgba)
+        self.rviz_global_left_lane_publisher.publish(rviz_left_lane_bound_message)
+
+        rviz_right_lane_bound_message = self.produce_marker_array_rviz(x_right_lane_boundary, y_right_lane_boundary,rgba)
+        self.rviz_global_right_lane_publisher.publish(rviz_right_lane_bound_message)
 
 
 
@@ -759,7 +792,6 @@ class MPCC_controller_class():
     def set_up_topics_for_rviz(self):
 
         self.rviz_MPC_path_publisher = rospy.Publisher('rviz_MPC_path_' + str(self.car_number), MarkerArray, queue_size=10)
-        self.rviz_MPC_uncertainty_region_publisher = rospy.Publisher('rviz_MPC_uncertainty_region_' + str(self.car_number), MarkerArray, queue_size=10)
         self.rviz_global_path_publisher = rospy.Publisher('rviz_global_path_' + str(self.car_number), MarkerArray, queue_size=10)
         self.rviz_local_path_publisher = rospy.Publisher('rviz_local_path_' + str(self.car_number), MarkerArray, queue_size=10)
         self.rviz_high_level_solution_publisher = rospy.Publisher('rviz_high_level_solution_' + str(self.car_number), MarkerArray, queue_size=10)
@@ -768,6 +800,9 @@ class MPCC_controller_class():
         self.rviz_right_lane_publisher = rospy.Publisher('rviz_right_lane_' + str(self.car_number), MarkerArray, queue_size=10)
         self.rviz_R_path_publisher = rospy.Publisher('rviz_R_path_' + str(self.car_number), MarkerArray, queue_size=10)
         self.rviz_initial_guess_publisher = rospy.Publisher('rviz_initial_guess_' + str(self.car_number), MarkerArray, queue_size=10)
+
+        self.rviz_global_left_lane_publisher =  rospy.Publisher('rviz_global_left_lane_' + str(self.car_number), MarkerArray, queue_size=10)
+        self.rviz_global_right_lane_publisher = rospy.Publisher('rviz_global_right_lane_' + str(self.car_number), MarkerArray, queue_size=10)
 
 
     def produce_marker_array_rviz(self, x, y, rgba):
