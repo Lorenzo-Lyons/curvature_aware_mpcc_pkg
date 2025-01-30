@@ -8,7 +8,7 @@ from functions_for_solver_generation import generate_high_level_path_planner_ocp
 
 # select the solver to build MPCC or CAMPCC
 MPC_algorithms = ['CAMPCC','MPCC'] # 'MPCC' or 'CAMPCC'
-dynamic_models = ['kinematic_bicycle','dynamic_bicycle'] # 'kinematic_bicycle', 'dynamic_bicycle'
+dynamic_models = [] # 'kinematic_bicycle', 'dynamic_bicycle' # 'kinematic_bicycle','dynamic_bicycle'
 
 # generate locations to where to build the solvers
 current_script_path = os.path.realpath(__file__)

@@ -18,7 +18,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         self.solver_name_acados = 'high_level_reference_generator_' + MPC_algorithm
         self.solver_name_forces = 'high_level_forces_reference_generator_' + MPC_algorithm
 
-        self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
+        self.n_points_kernelized = 81 # number of points in the kernelized path (41 for reference)
         self.time_horizon = 1.5
         self.N = 30 # stages
         self.max_yaw_rate = 10 # based on w = V / R = k * V so 2 * V is the maximum yaw rate 
