@@ -6,13 +6,6 @@ from scipy.interpolate import CubicSpline
 
 
 def generate_track(Checkpoints_x, Checkpoints_y, Checkpoints_s, Ds_back, Ds_forward, Checkpoints_k):
-    # Checkpoints_Rx,Checkpoints_Ry,Checkpoints_Rz,
-    # n_points = 2000
-    # spline_sections = 1000
-
-    # determine where to set the origin of s
-    # find index of s = Ds_back
-    #index_start_lap = np.argmin(np.abs(Checkpoints_s - 0))
 
     index_start_lap = np.argmin(np.abs(Checkpoints_s - Ds_back))
 
@@ -32,45 +25,17 @@ def generate_track(Checkpoints_x, Checkpoints_y, Checkpoints_s, Ds_back, Ds_forw
     s_vals_global_path = Checkpoints_s[index_start_lap:idx_finish_lap] - Checkpoints_s[index_start_lap]
     x_vals_global_path = np.array(Checkpoints_x[index_start_lap:idx_finish_lap])
     y_vals_global_path = np.array(Checkpoints_y[index_start_lap:idx_finish_lap])
-    # R_x_vals_global_path = np.array(Checkpoints_Rx[index_start_lap:idx_finish_lap])
-    # R_y_vals_global_path = np.array(Checkpoints_Ry[index_start_lap:idx_finish_lap])
-    # R_z_vals_global_path = np.array(Checkpoints_Rz[index_start_lap:idx_finish_lap])
+
     k_vals_global_path = np.array(Checkpoints_k[index_start_lap:idx_finish_lap])
 
     # now produce path for local path generation
     s_4_local_path = Checkpoints_s[:idx_finish] - Checkpoints_s[index_start_lap]
     x_4_local_path = np.array(Checkpoints_x[:idx_finish])
     y_4_local_path = np.array(Checkpoints_y[:idx_finish])
-    # R_x_4_local_path = np.array(Checkpoints_Rx[:idx_finish])
-    # R_y_4_local_path = np.array(Checkpoints_Ry[:idx_finish])
-    # R_z_4_local_path = np.array(Checkpoints_Rz[:idx_finish])
+
     k_4_local_path = np.array(Checkpoints_k[:idx_finish])
 
 
-    # # just use Checkpoints_x and Checkpoints_y as the global path in the future
-    # x_vals_global_path = Checkpoints_x
-    # y_vals_global_path = Checkpoints_y
-
-    # # define looped path for local path generation (in order to not run out of path)
-    # x_4_local_path = np.concatenate((Checkpoints_x[:-1],Checkpoints_x, Checkpoints_x[1:]))
-    # y_4_local_path = np.concatenate((Checkpoints_y[:-1],Checkpoints_y, Checkpoints_y[1:]))
-    # s_4_local_path = np.concatenate((s_vals_global_path[:-1] -s_vals_global_path[-1],s_vals_global_path, s_vals_global_path[1:] + s_vals_global_path[-1]))
-    
-    # # generate cubic splines to resample in the required interval and with the required number of brakes
-    # s_for_spline_generation = np.linspace(s_4_local_path[0], s_4_local_path[-1], spline_sections)
-    # x_for_spline_generation = np.interp(s_for_spline_generation, s_4_local_path, x_4_local_path)
-    # y_for_spline_generation = np.interp(s_for_spline_generation, s_4_local_path, y_4_local_path)
-
-    # cs_scipy_x = CubicSpline(s_for_spline_generation, x_for_spline_generation)
-    # cs_scipy_y = CubicSpline(s_for_spline_generation, y_for_spline_generation)
-
-
-
-    # s_4_local_path = np.linspace(Ds_back, s_vals_global_path[-1] + Ds_forward, n_points)
-    # x_4_local_path = cs_scipy_x(s_4_local_path)
-    # y_4_local_path = cs_scipy_y(s_4_local_path)
-    
-    # R_x_vals_global_path, R_y_vals_global_path, R_z_vals_global_path, R_x_4_local_path, R_y_4_local_path, R_z_4_local_path,\
     return s_vals_global_path, x_vals_global_path, y_vals_global_path, s_4_local_path, x_4_local_path, y_4_local_path,\
     k_vals_global_path, k_4_local_path
 
@@ -867,18 +832,17 @@ def generate_path_data(track_choice):
     Checkpoints_k = raw_track(track_choice) # Checkpoints_Rx , Checkpoints_Ry , Checkpoints_Rz,
 
 
-
     # add a loop before and a loop afterwards to generate extra reference for the MPC
     x_4_local_path = np.concatenate((Checkpoints_x[:-1],Checkpoints_x, Checkpoints_x[1:]))
     y_4_local_path = np.concatenate((Checkpoints_y[:-1],Checkpoints_y, Checkpoints_y[1:]))
     s_4_local_path = np.concatenate((Checkpoints_s[:-1] -Checkpoints_s[-1],Checkpoints_s, Checkpoints_s[1:] + Checkpoints_s[-1]))
 
     k_4_local_path = np.concatenate((Checkpoints_k[:-1],Checkpoints_k, Checkpoints_k[1:]))
-    
+
 
     window = 5
-    k_vals_global_path =  sliding_window_smooth(k_4_local_path, window)
-    k_vals_global_path =  sliding_window_smooth(k_vals_global_path, window)
+    k_4_local_path =  sliding_window_smooth(k_4_local_path, window)
+    k_4_local_path =  sliding_window_smooth(k_4_local_path, window)
 
 
     # now use the trajectory to generate the smoothed track
@@ -893,18 +857,19 @@ def generate_path_data(track_choice):
     x_4_local_path,\
     y_4_local_path,\
     k_vals_global_path,\
-    k_4_local_path = generate_track(x_4_local_path, y_4_local_path, s_4_local_path, Ds_back, Ds_forward,\
-                                      k_vals_global_path) # remove last point to avoid overlap     ## R_x_4_local_path,R_y_4_local_path,R_z_4_local_path,
-
+    k_4_local_path = generate_track(x_4_local_path, y_4_local_path, s_4_local_path, Ds_back, Ds_forward,k_4_local_path) 
 
     # genrate derivatives of the path
     dx_ds, dy_ds, d2x_ds2, d2y_ds2 = produce_ylabels_devs(s_4_local_path,x_4_local_path,y_4_local_path)
 
-    # R_x_vals_global_path, R_y_vals_global_path, R_z_vals_global_path,\
-    # R_x_4_local_path, R_y_4_local_path, R_z_4_local_path,\
+    # produce heading angle
+    heading_angle_4_local_path = np.arctan2(dy_ds, dx_ds)
+    # unwrap the heading angle to prevent jumps
+    heading_angle_4_local_path = np.unwrap(heading_angle_4_local_path)
+
     return s_vals_global_path, x_vals_global_path, y_vals_global_path, s_4_local_path, x_4_local_path, y_4_local_path,\
            dx_ds, dy_ds, d2x_ds2, d2y_ds2,\
-            k_vals_global_path, k_4_local_path
+            k_vals_global_path, k_4_local_path, heading_angle_4_local_path
 
 
 
@@ -986,7 +951,8 @@ if __name__ == '__main__':
 
     s_vals_global_path, x_vals_global_path, y_vals_global_path, s_4_local_path, x_4_local_path, y_4_local_path,\
     dx_ds, dy_ds, d2x_ds2, d2y_ds2,\
-    k_vals_global_path, k_4_local_path = generate_path_data(track_choice)
+    k_vals_global_path, k_4_local_path,\
+    heading_angle_4_local_path = generate_path_data(track_choice)
 
 
     # plot raw track

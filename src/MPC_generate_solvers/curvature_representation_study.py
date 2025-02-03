@@ -1,68 +1,106 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from path_track_definitions import generate_path_data
 
-# define path length and curvature
+
+
+# racetrack generation
+track_choice = 'racetrack_vicon_2' 
+
+s_vals_global_path,\
+x_vals_global_path,\
+y_vals_global_path,\
+s_4_local_path,\
+x_4_local_path,\
+y_4_local_path,\
+dx_ds, dy_ds, d2x_ds2, d2y_ds2,\
+k_vals_global_path,\
+k_4_local_path,\
+heading_angle_4_local_path = generate_path_data(track_choice)
+
+
+
+# plot the path 4 local path
+figure, ax = plt.subplots(3,1)
+ax[0].plot(x_4_local_path, y_4_local_path,label='path')
+ax[0].set_xlabel('x [m]')
+ax[0].set_ylabel('y [m]')
+ax[0].axis('equal')
+# now plot the heading 
+ax[1].plot(s_4_local_path, heading_angle_4_local_path,label='heading')
+ax[1].set_xlabel('s [m]')
+ax[1].set_ylabel('heading [rad]')
+# now plot the curvature
+ax[2].plot(s_4_local_path, k_4_local_path,label='k')
+ax[2].set_xlabel('s [m]')
+ax[2].set_ylabel('k')
+
+
+
+
+
+# define path length and k_vec
+s_init = 2.75 #6.5
 path_length = 4.5 # 3 m/s for 1.5s time horizon
-discretization = 1000
-R = 0.75
-curve_length = R*np.pi
-s_curve_begin = (path_length - curve_length)/2
-s_curve_end = s_curve_begin + curve_length
 
-# define curvature to be 0 until 1.5, then 1.33, then 0 again
-s_vec = np.linspace(0, path_length, discretization)
-curvature = np.zeros(discretization)
 
-# define when curve starts and ends
-curve_strat_index = np.argmin(np.abs(s_vec - s_curve_begin))
-curve_end_index = np.argmin(np.abs(s_vec - s_curve_end))
-
-curvature[curve_strat_index:curve_end_index] = 1/R
+# find the index of the point closest to the initial point
+s_init_index = np.argmin(np.abs(s_4_local_path - s_init))
+# find the index of the point closest to the final point
+s_final_index = np.argmin(np.abs(s_4_local_path - (s_init + path_length)))
+len_s = s_final_index - s_init_index
 
 
 
-# integrate the curvature to get the angle and then again to get the position
-angle = np.zeros(discretization)
-x_path = np.zeros(discretization)
-y_path = np.zeros(discretization)
 
-for i in range(1,discretization):
-    angle[i] = angle[i-1] + curvature[i-1]*(s_vec[i]-s_vec[i-1])
+# define k_vec to be 0 until 1.5, then 1.33, then 0 again
+s_vec = s_4_local_path[s_init_index:s_final_index] - s_4_local_path[s_init_index] # set it to 0
+k_vec = k_4_local_path[s_init_index:s_final_index]
+
+
+# integrate the k_vec to get the angle and then again to get the position
+angle = np.zeros(len_s)
+x_path = np.zeros(len_s)
+y_path = np.zeros(len_s)
+
+# integrate using the real k values
+for i in range(1,len_s):
+    angle[i] = angle[i-1] + k_vec[i-1]*(s_vec[i]-s_vec[i-1])
     x_path[i] = x_path[i-1] + np.cos(angle[i-1])*(s_vec[i]-s_vec[i-1])
     y_path[i] = y_path[i-1] + np.sin(angle[i-1])*(s_vec[i]-s_vec[i-1])
 
 
 
-
-
-# plot the curvature
+# plot the k_vec
 figure, ax_k = plt.subplots()
-ax_k.plot(s_vec, curvature,label='k',color='gray',alpha=0.3)
+ax_k.plot(s_vec, k_vec, label='k',color='gray',alpha=0.3)
 ax_k.set_xlabel('s [m]')
-ax_k.set_ylabel('curvature')
+ax_k.set_ylabel('k_vec')
+
 
 
 
 # plot the path
-# figure, ax_p = plt.subplots()
-# ax_p.plot(x_path, y_path,label='path')
-# ax_p.set_xlabel('x [m]')
-# ax_p.set_ylabel('y [m]')
-# ax_p.axis('equal')
+figure, ax_p = plt.subplots()
+ax_p.plot(x_path, y_path,label='path')
+ax_p.set_xlabel('x [m]')
+ax_p.set_ylabel('y [m]')
+ax_p.axis('equal')
 
-# show different methods of representing the curvature and overlay the curvature plot
-# the most thorough thing to do would be to compare the solver perfomance for different radiuses of curvature with different initial conditions
+# show different methods of representing the k_vec and overlay the k_vec plot
+# the most thorough thing to do would be to compare the solver perfomance for different radiuses of k_vec with different initial conditions
 
 
-# plotting the curvature approximation for different methods
+# plotting the k_vec approximation for different methods
 # kernelized linear regression
 n_points_kernelized = 40
 # define the labels
-labels_k = np.interp(np.linspace(0,path_length,n_points_kernelized), s_vec, curvature)
+labels_k = np.interp(np.linspace(0,path_length,n_points_kernelized), s_vec, k_vec)
 s_X_vec_normalized = np.expand_dims(np.linspace(0,1,n_points_kernelized),1)
 s_vec_normalized = s_vec/path_length
 
-
+# add datapoints to the plot
+ax_k.scatter(s_X_vec_normalized * path_length, labels_k, label='data',color='gray',marker='.')
 
 try:
     from .path_track_definitions import K_RBF_kernel, K_matern2_kernel
@@ -77,8 +115,8 @@ lambda_val = 0.0001**2
 
 K_xx = K_matern2_kernel(s_X_vec_normalized, s_X_vec_normalized, path_lengthscale,n_points_kernelized,n_points_kernelized)
 Kxx_inv = np.linalg.inv(K_xx + lambda_val * np.eye(len(s_X_vec_normalized))) 
-k_vec_matern = np.zeros(discretization)
-for i in range(discretization):
+k_vec_matern = np.zeros(len_s)
+for i in range(len_s):
     s_star = np.array([s_vec_normalized[i]])
     K_x_star = K_matern2_kernel(s_star, s_X_vec_normalized, path_lengthscale,1,n_points_kernelized)      
     left_side = K_x_star @ Kxx_inv
@@ -89,8 +127,8 @@ ax_k.plot(s_vec, k_vec_matern, label='matern2', zorder=20,alpha=0.5,color='orang
 # repeat the same for the RBF kernel
 K_xx = K_RBF_kernel(s_X_vec_normalized, s_X_vec_normalized, path_lengthscale,n_points_kernelized,n_points_kernelized)
 Kxx_inv = np.linalg.inv(K_xx + lambda_val * np.eye(len(s_X_vec_normalized)))
-k_vec_RBF = np.zeros(discretization)
-for i in range(discretization):
+k_vec_RBF = np.zeros(len_s)
+for i in range(len_s):
     s_star = np.array([s_vec_normalized[i]])
     K_x_star = K_RBF_kernel(s_star, s_X_vec_normalized, path_lengthscale,1,n_points_kernelized)      
     left_side = K_x_star @ Kxx_inv
@@ -101,16 +139,20 @@ ax_k.plot(s_vec, k_vec_RBF, label='RBF',alpha=0.5)
 # # --- spline interpolation ---
 from scipy.interpolate import CubicSpline
 cs = CubicSpline(s_X_vec_normalized[:,0], labels_k)
-k_vec_spline = cs(np.linspace(0,1,discretization))
+k_vec_spline = cs(s_vec_normalized)
 # add this to the plot
 ax_k.plot(s_vec, k_vec_spline, label='spline',alpha=0.5,color='red')
 
 # using chebyshev polynomials with 20 bases
 from numpy.polynomial.chebyshev import Chebyshev
 cheb = Chebyshev.fit(s_X_vec_normalized[:,0], labels_k, 20)
-k_vec_cheb = cheb(np.linspace(0,1,discretization))
+k_vec_cheb = cheb(s_vec_normalized)
 # add this to the plot
 ax_k.plot(s_vec, k_vec_cheb, label='chebyshev',alpha=0.5,color='green')
+
+
+ax_k.legend()
+plt.show()
 
 
 
@@ -121,7 +163,7 @@ import gpytorch
 
 # define troch version of the data
 x_data =  torch.unsqueeze(torch.tensor(s_vec_normalized),1).float().cuda()
-y_data = torch.tensor(curvature).float().cuda()
+y_data = torch.tensor(k_vec).float().cuda()
 
 
 
@@ -135,7 +177,7 @@ class GPModel(ApproximateGP):
         variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution, learn_inducing_locations=True)
         super(GPModel, self).__init__(variational_strategy)
         self.mean_module = gpytorch.means.ZeroMean()
-        #self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel()) 
+        #covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel()) 
         self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.MaternKernel(nu=5/2))
 
     def forward(self, x):
@@ -167,7 +209,7 @@ model.covar_module.base_kernel.lengthscale = torch.tensor([path_lengthscale]).cu
 # print out trainable parameters for the model
 
 # train the SVGP
-train_iter = 100
+train_iter = 1
 learn_rate = 0.01
 
 

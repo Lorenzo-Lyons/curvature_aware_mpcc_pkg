@@ -306,15 +306,15 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
     def produce_X0(self,V_target,local_path_length,labels_k_params):
         # Initial guess for state trajectory
         X0_array = np.zeros((self.N+1,self.nu +  self.nx))
-        # z = yaw_dot slack x y yaw s ref_x ref_y ref_heading
-        #     0       1     2 3 4   5 6     7     8  
+        # z = yaw_dot slack s_dot x y yaw s 
+        #     0       1     2     3 4 5   6
 
         # assign initial guess for the states by forward euler integration on th ereference path
 
         # refinement for first guess needs to be higher because the forward euler is a bit lame
         N_0 = 1000
 
-        s_0_vec = np.linspace(0, 0 + V_target * 1.5, N_0+1)
+        s_0_vec = np.linspace(0, V_target * self.time_horizon, N_0+1)
 
         # interpolate to get kurvature values
         normalized_s_4_kernel_path = np.linspace(0.0, 1.0, self.n_points_kernelized)
@@ -345,13 +345,12 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         # assign values to the array
         X0_array[:,0] = u_yaw_rate_0
         X0_array[:,1] = np.zeros(self.N+1) # slack variable should be zero
-        X0_array[:,2] = x_ref_0
-        X0_array[:,3] = y_ref_0
-        X0_array[:,4] = ref_heading_0
-        X0_array[:,5] = s_0_vec
-        X0_array[:,6] = x_ref_0
-        X0_array[:,7] = y_ref_0
-        X0_array[:,8] = ref_heading_0
+        X0_array[:,2] = V_target # s_dot can be around V_target
+        X0_array[:,3] = x_ref_0
+        X0_array[:,4] = y_ref_0
+        X0_array[:,5] = ref_heading_0
+        X0_array[:,6] = s_0_vec
+
 
         return X0_array
 
@@ -652,13 +651,12 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
 
 
 
-
-    def produce_X0(self,V_target,local_path_length,labels_x, labels_y_params):
+    def produce_X0(self,V_target,local_path_length,labels_x, labels_y, labels_heading):
         # NOTE this needs to be updated to include the slack variable
         # Initial guess for state trajectory
         X0_array = np.zeros((self.N+1,self.nu +  self.nx))
-        # z = yaw_dot slack x y yaw s ref_x ref_y ref_heading
-        #     0       1     2 3 4   5 6     7     8  
+        # z = yaw_dot slack s_dot x y yaw s 
+        #     0       1     2     3 4   5 6 
 
         # assign initial guess for the states by forward euler integration on th ereference path
 
@@ -671,38 +669,28 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         normalized_s_4_kernel_path = np.linspace(0.0, 1.0, self.n_points_kernelized)
 
         s_star_0 = s_0_vec / local_path_length # normalize s
-        k_0_vals = np.interp(s_star_0, normalized_s_4_kernel_path, labels_k_params)
-        x_ref_0 = np.zeros(N_0+1)
-        y_ref_0 = np.zeros(N_0+1)
-        ref_heading_0 = np.zeros(N_0+1)
-        dt = self.time_horizon / N_0
-        u_yaw_rate_0 = np.zeros(N_0+1)
-        for i in range(1,N_0+1):
-            x_ref_0[i] = x_ref_0[i-1] + V_target * dt * np.cos(ref_heading_0[i-1])
-            y_ref_0[i] = y_ref_0[i-1] + V_target * dt * np.sin(ref_heading_0[i-1])
-            ref_heading_0[i] = ref_heading_0[i-1] + k_0_vals[i-1] * V_target * dt
-
-            u_yaw_rate_0[i-1] = (ref_heading_0[i] - ref_heading_0[i-1] )/ dt
+        
+        x_ref_0 = np.interp(s_star_0, normalized_s_4_kernel_path, labels_x)
+        y_ref_0 = np.interp(s_star_0, normalized_s_4_kernel_path, labels_y)
+        ref_heading_0 = np.interp(s_star_0, normalized_s_4_kernel_path, labels_heading)
 
         # now down sample to the N points
         s_0_vec = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), s_0_vec)
         x_ref_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), x_ref_0)
         y_ref_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), y_ref_0)
         ref_heading_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), ref_heading_0)
-        u_yaw_rate_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), u_yaw_rate_0)
-
-
+        u_yaw_rate_0 = np.diff(ref_heading_0) / (self.time_horizon / self.N)
+        u_yaw_rate_0 = np.append(u_yaw_rate_0, u_yaw_rate_0[-1])         # append last value again to make the array the same size
 
         # assign values to the array
         X0_array[:,0] = u_yaw_rate_0
         X0_array[:,1] = np.zeros(self.N+1) # slack variable should be zero
-        X0_array[:,2] = x_ref_0
-        X0_array[:,3] = y_ref_0
-        X0_array[:,4] = ref_heading_0
-        X0_array[:,5] = s_0_vec
-        X0_array[:,6] = x_ref_0
-        X0_array[:,7] = y_ref_0
-        X0_array[:,8] = ref_heading_0
+        X0_array[:,2] = V_target # s_dot can be around V_target
+        X0_array[:,3] = x_ref_0
+        X0_array[:,4] = y_ref_0
+        X0_array[:,5] = ref_heading_0
+        X0_array[:,6] = s_0_vec
+
 
         return X0_array
 
@@ -1078,7 +1066,7 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, q_acc, x_ref, y_ref, yaw_ref, x_path, y_path, lane_width = self.unpack_parameters(p)
         return np.array([self.lane_boundary_constraint(pos_x,pos_y,x_path,y_path,slack,lane_width)])
 
-    def produce_X0(self,V_target, output_array_high_level):
+    def produce_X0(self,V_target, high_level_solver_array):
         # Initial guess 
         X0_array = np.zeros((self.N+1,self.nu + self.nx))
         # z = th st slack x y yaw vx vy w
@@ -1094,11 +1082,11 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
 
         # assign initial guess for solver
         X0_array[:,0] = throttle_0
-        X0_array[:,3] = output_array_high_level[:,2]
-        X0_array[:,4] = output_array_high_level[:,3]
-        X0_array[:,5] = output_array_high_level[:,4]
+        X0_array[:,3] = high_level_solver_array[:,1]
+        X0_array[:,4] = high_level_solver_array[:,2]
+        X0_array[:,5] = high_level_solver_array[:,3]
         X0_array[:,6] = V_target # assign target speed as first guess 
-        X0_array[:,8] = output_array_high_level[:,0] # input of high level is the yaw rate
+        X0_array[:,8] = high_level_solver_array[:,0] # input of high level is the yaw rate
 
         return X0_array
 
