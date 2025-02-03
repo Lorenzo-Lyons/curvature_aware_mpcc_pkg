@@ -23,7 +23,7 @@ import rospkg
 from acados_template import AcadosOcpSolver
 
 from tf.transformations import euler_from_quaternion
-from MPC_generate_solvers.functions_for_solver_generation import generate_high_level_path_planner_ocp, generate_low_level_solver_ocp
+from MPC_generate_solvers.functions_for_solver_generation import generate_high_level_path_planner_ocp, generate_low_level_solver_ocp, generate_high_level_MPCC_PP
 
 
 # TODO
@@ -43,7 +43,7 @@ class MPC_GUI_manager:
         #fory dynamic parameter change using rqt_reconfigure GUI
         self.vehicles_list = vehicles_list
         self.solver_software_options = ['ACADOS' , 'FORCES']
-        self.MPC_algorithm_options = ['MPCC', 'CAMPCC']
+        self.MPC_algorithm_options = ['MPCC', 'CAMPCC','MPCC_PP']
         self.dynamic_model_options = ['kinematic_bicycle', 'dynamic_bicycle']
 
         # as a last thing creat the server because it will be locked executing here
@@ -120,7 +120,7 @@ class MPCC_controller_class():
 
         # set up default solver choices that will be overwritten by the dynamic reconfigure anyway so ok
         self.solver_software = 'ACADOS' # 'FORCES', 'ACADOS'
-        self.MPC_algorithm = 'MPCC' # 'CAMPCC'    # solver algorithm can be standard MPCC or curvature-aware CAMPCC
+        self.MPC_algorithm = 'MPCC' # 'CAMPCC', 'MPCC_PP'    # solver algorithm can be standard MPCC or curvature-aware CAMPCC
         self.dynamic_model = 'kinematic_bicycle' # 'dynamic_bicycle', 'kinematic_bicycle'
 
         # path to where solvers are stored
@@ -494,24 +494,34 @@ class MPCC_controller_class():
         # set smalle oprimization step
         #self.high_level_solver.options_set('step_length',0.75)
 
-
-        # set initial condition
-        # x y yaw s ref_x ref_y ref_heading 
+        # x y yaw s ref_x ref_y ref_heading  (MPCC and CAMPPC)
+        # x y yaw s (MPCC_PP)
         xinit = np.zeros(self.high_level_solver_generator_obj.nx) # all zeros
         xinit[0] = pos_x_init_rot
         xinit[1] = pos_y_init_rot
         xinit[2] = yaw_init_rot
 
-        # define parameters
-        params_i = np.array([V_target, local_path_length, self.q_con, self.q_lag, self.q_u_yaw_rate, self.qt_pos_high, self.qt_rot_high,self.lane_width,self.qt_s_high,*labels_k])
+        # # define parameters and first guess
+        if self.MPC_algorithm == 'MPCC' or self.MPC_algorithm == 'CAMPCC':
+                                
+            params_i = np.array([V_target, local_path_length, self.q_con, self.q_lag, self.q_u_yaw_rate, self.qt_pos_high, self.qt_rot_high,self.lane_width,self.qt_s_high,*labels_k])
+            # define first guess
+            X0_array_high_level = self.high_level_solver_generator_obj.produce_X0(self.V_target,local_path_length,labels_k)
+        
+        elif self.MPC_algorithm == 'MPCC_PP':
+            #this uses different states and initial conditions
+            params_i = np.array([V_target, local_path_length, self.q_con, self.q_lag, self.q_u_yaw_rate, self.qt_pos_high, self.qt_rot_high,self.lane_width,self.qt_s_high,*labels_x, *labels_y, *labels_yaw])
+            # define first guess
+            X0_array_high_level = self.high_level_solver_generator_obj.produce_X0(self.V_target,local_path_length,labels_k)
+        
+
+
+        # stack parameters for all time steps
         param_array = np.zeros((self.high_level_solver_generator_obj.N+1, self.high_level_solver_generator_obj.n_parameters))
         for i in range(self.high_level_solver_generator_obj.N+1):
             param_array[i,:] = params_i
 
-        # define first guess
-        X0_array_high_level = self.high_level_solver_generator_obj.produce_X0(self.V_target,local_path_length,labels_k)
-        
-
+        # assign the value to the solver
         if self.solver_software == 'FORCES':
             # - set up initial guess and parameters
             x0_array_forces = X0_array_high_level.ravel()

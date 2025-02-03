@@ -360,11 +360,10 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
 class generate_high_level_MPCC_PP(): # inherits from DART system identification
 
-    def __init__(self,MPC_algorithm):
+    def __init__(self):
         
-        self.MPC_algorithm = MPC_algorithm
-        self.solver_name_acados = 'high_level_acados_MPCC_PP_' + MPC_algorithm
-        self.solver_name_forces = 'high_level_forces_MPCC_PP_' + MPC_algorithm
+        self.solver_name_acados = 'high_level_acados_MPCC_PP'
+        self.solver_name_forces = 'high_level_forces_MPCC_PP'
 
         self.n_points_kernelized = 81 # number of points in the kernelized path (41 for reference)
         self.time_horizon = 1.5
@@ -425,8 +424,9 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         ocp.cost.cost_type_e = 'EXTERNAL'
 
         # --- set up the cost functions ---
-        ocp.model.cost_expr_ext_cost  =  self.objective(pos_x,pos_y,u_yaw_dot,slack,q_con,q_lag,q_u,s,local_path_length,labels_x, labels_y, labels_heading) 
+        ocp.model.cost_expr_ext_cost  =  self.objective(pos_x,pos_y,u_yaw_dot,slack,s_dot,q_con,q_lag,q_u,s,local_path_length,labels_x, labels_y, labels_heading) 
         ocp.model.cost_expr_ext_cost_e =  self.objective_terminal_cost(yaw,pos_x,pos_y,qt_pos,qt_rot,s,qt_s_high,V_target,local_path_length,labels_x, labels_y, labels_heading)
+        
                 
         # constraints
         #ocp.constraints.constr_type = 'BGH'
@@ -478,8 +478,8 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         # set fixed input bounds since they will not change at runtime
         # generate inf upper and lower bounds for the inputs and states
                             #  u_yaw_dot,       slack, s_dot, pos_x, pos_y,yaw,   s,  ref_x, ref_y, ref_heading
-        model.lb = np.array([-self.max_yaw_rate, 0.0 ,   0.0, -1000, -1000,-1000,-0.2,-1000,-1000,-1000])  # lower bound on inputs
-        model.ub = np.array([+self.max_yaw_rate, +100, +1000, +1000, +1000,+1000,+1000,+1000,+1000,+1000])  # upper bound on inputs
+        model.lb = np.array([-self.max_yaw_rate, 0.0 ,   0.0, -1000, -1000,-1000,-0.2])  # lower bound on inputs
+        model.ub = np.array([+self.max_yaw_rate, +100, +1000, +1000, +1000,+1000,+1000])  # upper bound on inputs
 
         # Set objective
         for i in range(self.N):
@@ -539,10 +539,10 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         slack = z[1]
         s_dot = z[2]
         # state variables
-        pos_x = z[2]
-        pos_y = z[3]
-        yaw =   z[4]
-        s =     z[5]
+        pos_x = z[3]
+        pos_y = z[4]
+        yaw =   z[5]
+        s =     z[6]
         return u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s
 
     def unpack_parameters(self,p):
@@ -566,7 +566,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         return V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading
     
 
-    def objective(self,pos_x,pos_y,u_yaw_dot,slack,q_con,q_lag,q_u,s,local_path_length,labels_x, labels_y, labels_heading):
+    def objective(self,pos_x,pos_y,u_yaw_dot,slack,s_dot,q_con,q_lag,q_u,s,local_path_length,labels_x, labels_y, labels_heading):
         # produce x, y, heading of the path
         s_star = s / local_path_length # normalize s
         K_x_star = K_matern2_kernel(s_star, self.normalized_s_4_kernel_path,self.path_lengthscale,1,self.n_points_kernelized)      
@@ -582,16 +582,17 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         j = q_con * err_lat_squared +\
             q_lag * err_lag_squared +\
             q_u * u_yaw_dot ** 2 +\
+            q_u * s_dot ** 2 +\
             100 * slack**2 
         return j
     
     def objective_forces(self, z, p):
         u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s = self.unpack_state(z)
         V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
-        return self.objective(pos_x,pos_y,u_yaw_dot,slack,q_con,q_lag,q_u,s,local_path_length,labels_x, labels_y, labels_heading)
+        return self.objective(pos_x,pos_y,u_yaw_dot,slack,s_dot,q_con,q_lag,q_u,s,local_path_length,labels_x, labels_y, labels_heading)
 
     def objective_terminal_cost(self, yaw,pos_x,pos_y,qt_pos,qt_rot,s,qt_s_high,V_target,local_path_length,labels_x, labels_y, labels_heading):
-        # produce x, y, heading of the path
+        #produce x, y, heading of the path
         s_star = s / local_path_length # normalize s
         K_x_star = K_matern2_kernel(s_star, self.normalized_s_4_kernel_path,self.path_lengthscale,1,self.n_points_kernelized)      
         left_side = K_x_star @ self.Kxx_inv
@@ -601,13 +602,12 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
 
         # terminal cost
         dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
-        misalignment = -dot_direction # incentivise alligning with the path
+        misalignment = - dot_direction # incentivise alligning with the path
         # higher penalty costs on v and path tracking, plus an dditional penalty for not alligning with the path at the end
         err_pos_squared_t = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
         j_term_pos =    qt_pos * err_pos_squared_t + \
                         qt_rot * misalignment+\
-                        - qt_s_high * (s/(self.time_horizon*V_target))**2
-        
+                        - qt_s_high * (s/(self.time_horizon*V_target))**2     
         return j_term_pos
     
     def objective_terminal_forces(self, z, p):
