@@ -370,7 +370,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         self.max_yaw_rate = 10 # based on w = V / R = k * V so 2 * V is the maximum yaw rate 
         self.nu = 3
         self.nx = 4
-        self.n_parameters = 9 + 3 * self.n_points_kernelized
+        self.n_parameters = 10 + 3 * self.n_points_kernelized
         self.n_inequality_constraints = 1
 
         # generate fixed path quantities
@@ -409,7 +409,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s = self.unpack_state(vertcat(model.u,model.x))
 
         # unpack parameters
-        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(model.p)
+        V_target, local_path_length, q_con, q_lag, q_u, q_sdot, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(model.p)
 
         # assign dynamic constraint
         model.f_expl_expr = vertcat(*self.high_level_planner_continous_dynamics(V_target,u_yaw_dot,yaw,s_dot)) # make into vertical vector for casadi
@@ -423,7 +423,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         ocp.cost.cost_type_e = 'EXTERNAL'
 
         # --- set up the cost functions ---
-        ocp.model.cost_expr_ext_cost  =  self.objective(pos_x,pos_y,u_yaw_dot,slack,s_dot,q_con,q_lag,q_u,s,local_path_length,labels_x, labels_y, labels_heading) 
+        ocp.model.cost_expr_ext_cost  =  self.objective(pos_x,pos_y,u_yaw_dot,slack,s_dot,q_con,q_lag,q_u, q_sdot,s,local_path_length,labels_x, labels_y, labels_heading) 
         ocp.model.cost_expr_ext_cost_e =  self.objective_terminal_cost(yaw,pos_x,pos_y,qt_pos,qt_rot,s,qt_s_high,V_target,local_path_length,labels_x, labels_y, labels_heading)
         
                 
@@ -550,22 +550,23 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         q_con = p[2]
         q_lag = p[3]
         q_u = p[4]
-        qt_pos = p[5]
-        qt_rot = p[6]
-        lane_width = p[7]
-        qt_s_high = p[8]
+        q_sdot = p[5]
+        qt_pos = p[6]
+        qt_rot = p[7]
+        lane_width = p[8]
+        qt_s_high = p[9]
         # prepare the kernelized path labels
-        idx_start = 9
+        idx_start = 10
         idx_x_end = idx_start + self.n_points_kernelized
         idx_y_end = idx_x_end + self.n_points_kernelized
         idx_heading_end = idx_y_end + self.n_points_kernelized
         labels_x = p[idx_start:idx_x_end]
         labels_y = p[idx_x_end:idx_y_end]
         labels_heading = p[idx_y_end:idx_heading_end]
-        return V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading
+        return V_target, local_path_length, q_con, q_lag, q_u, q_sdot, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading
     
 
-    def objective(self,pos_x,pos_y,u_yaw_dot,slack,s_dot,q_con,q_lag,q_u,s,local_path_length,labels_x, labels_y, labels_heading):
+    def objective(self,pos_x,pos_y,u_yaw_dot,slack,s_dot,q_con,q_lag,q_u, q_sdot,s,local_path_length,labels_x, labels_y, labels_heading):
         # produce x, y, heading of the path
         s_star = s / local_path_length # normalize s
         K_x_star = K_matern2_kernel(s_star, self.normalized_s_4_kernel_path,self.path_lengthscale,1,self.n_points_kernelized)      
@@ -581,14 +582,14 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         j = q_con * err_lat_squared +\
             q_lag * err_lag_squared +\
             q_u * u_yaw_dot ** 2 +\
-            q_u * s_dot ** 2 +\
+            q_sdot * s_dot ** 2 +\
             100 * slack**2 
         return j
     
     def objective_forces(self, z, p):
         u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s = self.unpack_state(z)
-        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
-        return self.objective(pos_x,pos_y,u_yaw_dot,slack,s_dot,q_con,q_lag,q_u,s,local_path_length,labels_x, labels_y, labels_heading)
+        V_target, local_path_length, q_con, q_lag, q_u, q_sdot,qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
+        return self.objective(pos_x,pos_y,u_yaw_dot,slack,s_dot,q_con,q_lag,q_u, q_sdot,s,local_path_length,labels_x, labels_y, labels_heading)
 
     def objective_terminal_cost(self, yaw,pos_x,pos_y,qt_pos,qt_rot,s,qt_s_high,V_target,local_path_length,labels_x, labels_y, labels_heading):
         #produce x, y, heading of the path
@@ -611,7 +612,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
     
     def objective_terminal_forces(self, z, p):
         u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s = self.unpack_state(z)
-        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
+        V_target, local_path_length, q_con, q_lag, q_u, q_sdot,qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
         return self.objective_terminal_cost(yaw,pos_x,pos_y,qt_pos,qt_rot,s,qt_s_high,V_target,local_path_length,labels_x, labels_y, labels_heading)
 
 
@@ -630,7 +631,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
     def high_level_planner_continous_dynamics_forces(self, x, u, p):
         z = casadi.vertcat(u, x)
         u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s = self.unpack_state(z)
-        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
+        V_target, local_path_length, q_con, q_lag, q_u, q_sdot, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
         return np.array(self.high_level_planner_continous_dynamics(V_target,u_yaw_dot,yaw,s_dot))
 
     def lane_boundary_constraint(self,pos_x,pos_y,s,slack,lane_width,local_path_length,labels_x, labels_y):
@@ -646,7 +647,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
 
     def lane_boundary_constraint_forces(self,z, p):
         u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s = self.unpack_state(z)
-        V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
+        V_target, local_path_length, q_con, q_lag, q_u, q_sdot, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
         return np.array([self.lane_boundary_constraint(pos_x,pos_y,s,slack,lane_width,local_path_length,labels_x, labels_y)])
 
 

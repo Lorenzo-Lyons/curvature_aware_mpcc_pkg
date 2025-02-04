@@ -68,6 +68,7 @@ class MPC_GUI_manager:
             self.vehicles_list[i].q_con = config['q_con']
             self.vehicles_list[i].q_lag = config['q_lag']
             self.vehicles_list[i].q_u_yaw_rate = config['q_u_yaw_rate']
+            self.vehicles_list[i].q_sdot = config['q_sdot']
             self.vehicles_list[i].qt_pos_high = config['qt_pos_high']
             self.vehicles_list[i].qt_rot_high = config['qt_rot_high'] 
             self.vehicles_list[i].qt_s_high = config['qt_s_high']
@@ -276,7 +277,7 @@ class MPCC_controller_class():
             output_array_high_level = np.zeros((self.high_level_solver_generator_obj.N+1, self.high_level_solver_generator_obj.nu + self.high_level_solver_generator_obj.nx))
             for i in range(self.high_level_solver_generator_obj.N+1):
                 if i == self.high_level_solver.N:
-                    u_i_solution = np.array([0.0, 0.0])
+                    u_i_solution = np.zeros(self.high_level_solver_generator_obj.nu)
                 else:
                     u_i_solution = self.high_level_solver.get(i, "u")
                 x_i_solution = self.high_level_solver.get(i, "x")
@@ -433,6 +434,7 @@ class MPCC_controller_class():
         self.q_con = 1  # relative weight of lat error
         self.q_lag = 1  # relative weight of lag error (only for MPCC)
         self.q_u_yaw_rate = 0.1  # relative weight of inputs
+        self.q_sdot = 0.1  # relative weight of sdot for MPCC_PP fromulation
         self.qt_pos_high = 1  # relative weight of missing end point
         self.qt_rot_high = 1  # relative weight of path allignment
         self.qt_s_high = 1  # relative weight of progress along the path weight
@@ -541,7 +543,7 @@ class MPCC_controller_class():
         
         elif self.MPC_algorithm == 'MPCC_PP':
             #this uses different states and initial conditions
-            params_i = np.array([V_target, local_path_length, self.q_con, self.q_lag, self.q_u_yaw_rate, self.qt_pos_high, self.qt_rot_high,self.lane_width,self.qt_s_high,*labels_x, *labels_y, *labels_heading])
+            params_i = np.array([V_target, local_path_length, self.q_con, self.q_lag, self.q_u_yaw_rate, self.q_sdot ,self.qt_pos_high, self.qt_rot_high,self.lane_width,self.qt_s_high,*labels_x, *labels_y, *labels_heading])
             # define first guess
             X0_array_high_level = self.high_level_solver_generator_obj.produce_X0(self.V_target,local_path_length,labels_x,labels_y,labels_heading)
         
