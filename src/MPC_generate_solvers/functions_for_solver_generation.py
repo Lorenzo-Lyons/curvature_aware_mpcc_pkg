@@ -373,6 +373,8 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         self.n_parameters = 10 + 3 * self.n_points_kernelized
         self.n_inequality_constraints = 1
 
+        self.max_sdot = 6.0
+
         # generate fixed path quantities
         #n points kernelized is the number of points used to kernelize the path but defined above to get the nparamters right
         try:
@@ -424,14 +426,14 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
 
         # --- set up the cost functions ---
         ocp.model.cost_expr_ext_cost  =  self.objective(pos_x,pos_y,u_yaw_dot,slack,s_dot,q_con,q_lag,q_u, q_sdot,s,local_path_length,labels_x, labels_y, labels_heading) 
-        ocp.model.cost_expr_ext_cost_e =  self.objective_terminal_cost(yaw,pos_x,pos_y,qt_pos,qt_rot,s,qt_s_high,V_target,local_path_length,labels_x, labels_y, labels_heading)
+        ocp.model.cost_expr_ext_cost_e =  self.objective_terminal_cost(yaw,pos_x,pos_y,qt_pos,qt_rot,q_lag,s,qt_s_high,V_target,local_path_length,labels_x, labels_y, labels_heading)
         
                 
         # constraints
         #ocp.constraints.constr_type = 'BGH'
         ocp.constraints.idxbu = np.array([0,1,2])
-        ocp.constraints.lbu = np.array([-self.max_yaw_rate,0,0])
-        ocp.constraints.ubu = np.array([+self.max_yaw_rate,100,1000]) 
+        ocp.constraints.lbu = np.array([-self.max_yaw_rate,0,0.0])
+        ocp.constraints.ubu = np.array([+self.max_yaw_rate,100,self.max_sdot]) 
 
         # define lane boundary constraints
         ocp.model.con_h_expr = self.lane_boundary_constraint(pos_x,pos_y,s,slack,lane_width,local_path_length,labels_x, labels_y)  # Define h(x, u)
@@ -478,7 +480,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         # generate inf upper and lower bounds for the inputs and states
                             #  u_yaw_dot,       slack, s_dot, pos_x, pos_y,yaw,   s,  ref_x, ref_y, ref_heading
         model.lb = np.array([-self.max_yaw_rate, 0.0 ,   0.0, -1000, -1000,-1000,-0.2])  # lower bound on inputs
-        model.ub = np.array([+self.max_yaw_rate, +100, +1000, +1000, +1000,+1000,+1000])  # upper bound on inputs
+        model.ub = np.array([+self.max_yaw_rate, +100, self.max_sdot, +1000, +1000,+1000,+1000])  # upper bound on inputs
 
         # Set objective
         for i in range(self.N):
@@ -511,10 +513,10 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         codeoptions.nlp.stack_parambounds = True  # determines if the parameters can simply be stacked (but not sure exactly what it does)
 
         # set tolerances
-        codeoptions.nlp.TolStat = 1e-6  # inf norm tol. on stationarity
-        codeoptions.nlp.TolEq = 1e-5  # tol. on equality constraints
-        codeoptions.nlp.TolIneq = 1e-5  # tol. on inequality constraints
-        codeoptions.nlp.TolComp = 1e-5  # tol. on complementarity
+        # codeoptions.nlp.TolStat = 1e-6  # inf norm tol. on stationarity
+        # codeoptions.nlp.TolEq = 1e-5  # tol. on equality constraints
+        # codeoptions.nlp.TolIneq = 1e-5  # tol. on inequality constraints
+        # codeoptions.nlp.TolComp = 1e-5  # tol. on complementarity
 
         # set warm start behaviour for dual variables (so always warm start from solver perspective, even if in practice you give it a vector of zeros)
         codeoptions.init = 2  # 0 cold, 1 centered, 2 warm
@@ -525,9 +527,9 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         codeoptions.solvemethod = 'SQP_NLP' # 'PDIP_NLP' # changing to non linear primal dual method  'SQP_NLP'
         # NOTE that by default the solver uses a single sqp iteration so you need to increase the number of iterations
         codeoptions.sqp_nlp.maxqps = 3
-        codeoptions.sqp_nlp.reg_hessian = 1e-5  # regularization of hessian (default is 5 * 10^(-9))
+        #codeoptions.sqp_nlp.reg_hessian = 1e-5  # regularization of hessian (default is 5 * 10^(-9))
         # codeoptions.sqp_nlp.rti = 1
-        # codeoptions.sqp_nlp.maxSQPit = 5
+        #codeoptions.sqp_nlp.maxSQPit = 30
 
 
         return model,codeoptions
@@ -588,10 +590,10 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
     
     def objective_forces(self, z, p):
         u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s = self.unpack_state(z)
-        V_target, local_path_length, q_con, q_lag, q_u, q_sdot,qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
+        V_target, local_path_length, q_con, q_lag, q_u, q_sdot, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
         return self.objective(pos_x,pos_y,u_yaw_dot,slack,s_dot,q_con,q_lag,q_u, q_sdot,s,local_path_length,labels_x, labels_y, labels_heading)
 
-    def objective_terminal_cost(self, yaw,pos_x,pos_y,qt_pos,qt_rot,s,qt_s_high,V_target,local_path_length,labels_x, labels_y, labels_heading):
+    def objective_terminal_cost(self, yaw,pos_x,pos_y,qt_pos,qt_rot,q_lag,s,qt_s_high,V_target,local_path_length,labels_x, labels_y, labels_heading):
         #produce x, y, heading of the path
         s_star = s / local_path_length # normalize s
         K_x_star = K_matern2_kernel(s_star, self.normalized_s_4_kernel_path,self.path_lengthscale,1,self.n_points_kernelized)      
@@ -600,6 +602,8 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         ref_y = left_side @ labels_y
         ref_heading = left_side @ labels_heading
 
+        err_lag_squared = ((pos_x - ref_x) *  np.cos(ref_heading)  + (pos_y - ref_y) * np.sin(ref_heading)) ** 2
+
         # terminal cost
         dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
         misalignment = - dot_direction # incentivise alligning with the path
@@ -607,13 +611,14 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         err_pos_squared_t = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
         j_term_pos =    qt_pos * err_pos_squared_t + \
                         qt_rot * misalignment+\
+                        q_lag * err_lag_squared+\
                         - qt_s_high * (s/(self.time_horizon*V_target))**2     
         return j_term_pos
     
     def objective_terminal_forces(self, z, p):
         u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s = self.unpack_state(z)
-        V_target, local_path_length, q_con, q_lag, q_u, q_sdot,qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
-        return self.objective_terminal_cost(yaw,pos_x,pos_y,qt_pos,qt_rot,s,qt_s_high,V_target,local_path_length,labels_x, labels_y, labels_heading)
+        V_target, local_path_length, q_con, q_lag, q_u, q_sdot, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
+        return self.objective_terminal_cost(yaw,pos_x,pos_y,qt_pos,qt_rot,q_lag,s,qt_s_high,V_target,local_path_length,labels_x, labels_y, labels_heading)
 
 
     def high_level_planner_continous_dynamics(self,V_target,u_yaw_dot,yaw,s_dot):
@@ -1067,7 +1072,11 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, q_acc, x_ref, y_ref, yaw_ref, x_path, y_path, lane_width = self.unpack_parameters(p)
         return np.array([self.lane_boundary_constraint(pos_x,pos_y,x_path,y_path,slack,lane_width)])
 
-    def produce_X0(self,V_target, high_level_solver_array):
+    def produce_X0(self,V_target,
+                    x_high_level,
+                    y_high_level,
+                    yaw_high_level,
+                    yaw_rate_high_level):
         # Initial guess 
         X0_array = np.zeros((self.N+1,self.nu + self.nx))
         # z = th st slack x y yaw vx vy w
@@ -1083,11 +1092,11 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
 
         # assign initial guess for solver
         X0_array[:,0] = throttle_0
-        X0_array[:,3] = high_level_solver_array[:,1]
-        X0_array[:,4] = high_level_solver_array[:,2]
-        X0_array[:,5] = high_level_solver_array[:,3]
+        X0_array[:,3] = x_high_level
+        X0_array[:,4] = y_high_level
+        X0_array[:,5] = yaw_high_level
         X0_array[:,6] = V_target # assign target speed as first guess 
-        X0_array[:,8] = high_level_solver_array[:,0] # input of high level is the yaw rate
+        X0_array[:,8] = yaw_rate_high_level # input of high level is the yaw rate
 
         return X0_array
 

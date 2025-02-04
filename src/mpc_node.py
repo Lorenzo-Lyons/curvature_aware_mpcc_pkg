@@ -254,7 +254,7 @@ class MPCC_controller_class():
 
 
         # produce Chebyshev coefficients that represent local path
-        Ds_forward = 1.2 * V_target * self.high_level_solver_generator_obj.time_horizon #  self.dtt * self.high_level_solver_generator_obj.N
+        Ds_forward = 1.5 * V_target * self.high_level_solver_generator_obj.time_horizon #  self.dtt * self.high_level_solver_generator_obj.N
         Ds_back = 0.0 # this is the length of the path that is behind the car
 
 
@@ -292,24 +292,37 @@ class MPCC_controller_class():
         if self.MPC_algorithm == 'MPCC_PP':
             # reconstruct the path related quantities from the labels
             #              u_yaw_rate slack s_dot   x y yaw s (MPCC_PP)
+            # extract 
+            yaw_rate_high_level = output_array_high_level[:,0]
+            x_high_level = output_array_high_level[:,3]
+            y_high_level = output_array_high_level[:,4]
+            yaw_high_level = output_array_high_level[:,5]
+            # interpolate to get the path quantities
             s_output_vec = output_array_high_level[:,6]
-            x_output_vec = np.interp(s_output_vec, labels_s - labels_s[0], labels_x)
-            y_output_vec = np.interp(s_output_vec, labels_s - labels_s[0], labels_y)
-            heading_output_vec = np.interp(s_output_vec, labels_s - labels_s[0], labels_heading)
-            high_level_solver_array = output_array_high_level[:, [0,3,4,5]]
-            # add the reconstructed path related quantities
-            high_level_solver_array = np.column_stack((high_level_solver_array, x_output_vec, y_output_vec, heading_output_vec))
+            x_path = np.interp(s_output_vec/local_path_length, labels_s, labels_x)
+            y_path = np.interp(s_output_vec/local_path_length, labels_s, labels_y)
+            heading_path = np.interp(s_output_vec/local_path_length, labels_s, labels_heading)
 
         elif self.MPC_algorithm == 'MPCC' or self.MPC_algorithm == 'CAMPCC':
             #              u_yaw_rate slack   x y yaw s ref_x ref_y ref_heading  (MPCC and CAMPPC)
-            high_level_solver_array = output_array_high_level[:, [0,2,3,4,6,7,8]] # extract the relevant part of the output array
-
-
+            # extact 
+            yaw_rate_high_level = output_array_high_level[:,0]
+            x_high_level = output_array_high_level[:,2]
+            y_high_level = output_array_high_level[:,3]
+            yaw_high_level = output_array_high_level[:,4]
+            x_path = output_array_high_level[:,6]
+            y_path = output_array_high_level[:,7]
+            heading_path = output_array_high_level[:,8]
 
 
         # ------ LOW LEVEL SOLVER ------
-            
-        problem_low_level = self.set_up_low_level_solver_problem(high_level_solver_array,V_target,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega)
+        problem_low_level = self.set_up_low_level_solver_problem(x_high_level,
+                                                                 y_high_level,
+                                                                 yaw_high_level,
+                                                                 yaw_rate_high_level,
+                                                                 x_path,
+                                                                 y_path,
+                                                                 V_target,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega)
 
         # call the low level solver
         if self.solver_software == 'FORCES':
@@ -331,18 +344,30 @@ class MPCC_controller_class():
 
         # check if solver converged
         self.last_converged_low = self.check_solver_convergence(exitflag_low,self.last_converged_low, 1) # last input is the choice between high and low level solver
+        
+        # extract solution for plotting
+        x_low_level = output_array_low_level[:,3]
+        y_low_level = output_array_low_level[:,4]
+
 
         # --------------------------------
-
-
 
 
         # publish control inputs
         self.publish_control_inputs(output_array_low_level)
 
 
+
+        # plot in rviz
         if self.minimal_plotting == False:
-            self.produce_and_publish_rviz_visualization(high_level_solver_array, output_array_low_level,xyyaw_ref_path)
+            self.produce_and_publish_rviz_visualization(x_high_level,
+                                                        y_high_level,
+                                                        x_path,
+                                                        y_path,
+                                                        heading_path,
+                                                        x_low_level,
+                                                        y_low_level,
+                                                        xyyaw_ref_path)
             
         # publish computation time
         stop_clock_time = rospy.get_rostime()
@@ -475,12 +500,12 @@ class MPCC_controller_class():
 
         # resample the data points to have a fixed number of points
         n = self.high_level_solver_generator_obj.n_points_kernelized 
-        labels_s = np.linspace(s_data_points[0], s_data_points[-1], n)
-
-        labels_x = np.interp(labels_s, s_data_points, x_data_points)
-        labels_y = np.interp(labels_s, s_data_points, y_data_points)
-        labels_heading = np.interp(labels_s, s_data_points, heading_data_points)
-        labels_k = np.interp(labels_s, s_data_points, k_data_points)
+        labels_s = np.linspace(0, 1, n)
+        s_interp = (s_data_points - s_data_points[0])/local_path_length
+        labels_x = np.interp(labels_s, s_interp, x_data_points)
+        labels_y = np.interp(labels_s, s_interp, y_data_points)
+        labels_heading = np.interp(labels_s, s_interp, heading_data_points)
+        labels_k = np.interp(labels_s, s_interp, k_data_points)
 
         return labels_x,labels_y,labels_heading,labels_k,local_path_length, labels_s
        
@@ -543,6 +568,7 @@ class MPCC_controller_class():
         
         elif self.MPC_algorithm == 'MPCC_PP':
             #this uses different states and initial conditions
+                               # V_target, local_path_length,      q_con,      q_lag,      q_u,               q_sdot,      qt_pos,           qt_rot,          lane_width,     qt_s_high ,labels_x,  labels_y,   labels_heading
             params_i = np.array([V_target, local_path_length, self.q_con, self.q_lag, self.q_u_yaw_rate, self.q_sdot ,self.qt_pos_high, self.qt_rot_high,self.lane_width,self.qt_s_high,*labels_x, *labels_y, *labels_heading])
             # define first guess
             X0_array_high_level = self.high_level_solver_generator_obj.produce_X0(self.V_target,local_path_length,labels_x,labels_y,labels_heading)
@@ -580,11 +606,19 @@ class MPCC_controller_class():
         return problem_high_leval
 
 
-    def set_up_low_level_solver_problem(self,high_level_solver_array,V_target,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega):
+    def set_up_low_level_solver_problem(self,
+                                        x_high_level,
+                                        y_high_level,
+                                        yaw_high_level,
+                                        yaw_rate_high_level,
+                                        x_path,
+                                        y_path,
+                                        V_target,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega):
 
         # define initial condition (it's the same for both solvers)
         xinit = np.zeros(self.low_level_solver_generator_obj.nx) # all zeros
                     # x y yaw vx vy w
+
         xinit[0] = pos_x_init_rot
         xinit[1] = pos_y_init_rot
         xinit[2] = yaw_init_rot
@@ -596,17 +630,15 @@ class MPCC_controller_class():
         param_array = np.zeros((self.low_level_solver_generator_obj.N+1, self.low_level_solver_generator_obj.n_parameters))
         params_base = np.array([V_target, self.q_v, self.q_pos, self.q_rot, self.q_u, self.qt_pos, self.qt_rot, self.q_acc])
         for i in range(self.low_level_solver_generator_obj.N+1):
-            x_ref = high_level_solver_array[i,1]
-            y_ref = high_level_solver_array[i,2]
-            yaw_ref = high_level_solver_array[i,3]
-            x_path = high_level_solver_array[i,4]
-            y_path = high_level_solver_array[i,5]
-            # was from 2 to 7
             # append ref positions
-            param_array[i,:] = np.array([*params_base, x_ref, y_ref, yaw_ref, x_path, y_path, self.lane_width])
+            param_array[i,:] = np.array([*params_base, x_high_level[i], y_high_level[i], yaw_high_level[i], x_path[i], y_path[i], self.lane_width])
         
         # define first guess
-        X0_array = self.low_level_solver_generator_obj.produce_X0(V_target, high_level_solver_array)
+        X0_array = self.low_level_solver_generator_obj.produce_X0(  V_target,
+                                                                    x_high_level,
+                                                                    y_high_level,
+                                                                    yaw_high_level,
+                                                                    yaw_rate_high_level)
         
 
 
@@ -628,7 +660,11 @@ class MPCC_controller_class():
             self.low_level_solver.set(0, "lbx", xinit)
             self.low_level_solver.set(0, "ubx", xinit)
             # Initial guess for state trajectory
-            X0_array = self.low_level_solver_generator_obj.produce_X0(V_target, high_level_solver_array)
+            X0_array = self.low_level_solver_generator_obj.produce_X0(  V_target,
+                                                                        x_high_level,
+                                                                        y_high_level,
+                                                                        yaw_high_level,
+                                                                        yaw_rate_high_level)
 
             # assign frist guess
             for i in range(self.low_level_solver_generator_obj.N):
@@ -745,7 +781,15 @@ class MPCC_controller_class():
         return transformed_x, transformed_y
 
 
-    def produce_and_publish_rviz_visualization(self, high_level_solver_array, output_array_low_level,x_y_yaw_rototranslation):
+    def produce_and_publish_rviz_visualization(self,
+                                               x_high_level,
+                                               y_high_level,
+                                               x_path,
+                                               y_path,
+                                               heading_path,
+                                               x_low_level,
+                                               y_low_level,
+                                               x_y_yaw_rototranslation):
         #high_level_solver_array = [yaw_rate x y yaw ref_x ref_y ref_heading]
         
 
@@ -758,35 +802,35 @@ class MPCC_controller_class():
         # local path from solver solution
         # u x y yaw s ref_x ref_y ref_heading
         rgba = [255, 0, 255, 0.5]
-        transformed_x, transformed_y = self.rototranslate_path_2_abs_frame(high_level_solver_array[:,4], high_level_solver_array[:,5],x_y_yaw_rototranslation)
+        transformed_x, transformed_y = self.rototranslate_path_2_abs_frame(x_path, y_path,x_y_yaw_rototranslation)
         rviz_local_path_message = self.produce_marker_array_rviz(transformed_x, transformed_y,rgba)
         self.rviz_local_path_publisher.publish(rviz_local_path_message)
 
         # publish high level reference
         rgba = [0, 153, 76, 0.5]
-        transformed_x, transformed_y = self.rototranslate_path_2_abs_frame(high_level_solver_array[:,1], high_level_solver_array[:,2],x_y_yaw_rototranslation)
+        transformed_x, transformed_y = self.rototranslate_path_2_abs_frame(x_high_level, y_high_level,x_y_yaw_rototranslation)
         rviz_high_level_reference_message = self.produce_marker_array_rviz(transformed_x, transformed_y,rgba)
         self.rviz_high_level_solution_publisher.publish(rviz_high_level_reference_message)
 
         # lane boundaries
-        x_left_lane_boundary = np.zeros(high_level_solver_array.shape[0])
-        y_left_lane_boundary = np.zeros(high_level_solver_array.shape[0])
-        x_right_lane_boundary = np.zeros(high_level_solver_array.shape[0])
-        y_right_lane_boundary = np.zeros(high_level_solver_array.shape[0])
+        x_left_lane_boundary = np.zeros(x_path.shape[0])
+        y_left_lane_boundary = np.zeros(x_path.shape[0])
+        x_right_lane_boundary = np.zeros(x_path.shape[0])
+        y_right_lane_boundary = np.zeros(x_path.shape[0])
 
-        for ii in range(high_level_solver_array.shape[0]):
-            x_Cdev = np.cos(high_level_solver_array[ii,6])
-            y_Cdev = np.sin(high_level_solver_array[ii,6])
+        for ii in range(x_path.shape[0]):
+            x_Cdev = np.cos(heading_path[ii])
+            y_Cdev = np.sin(heading_path[ii])
 
             V_x_left = (self.lane_width/2) * x_Cdev
             V_y_left = ( self.lane_width/2) * y_Cdev
             V_x_right = (self.lane_width/2) * x_Cdev
             V_y_right = (self.lane_width/2) * y_Cdev
 
-            x_left_lane_boundary[ii] = high_level_solver_array[ii,4] - V_y_left
-            y_left_lane_boundary[ii] = high_level_solver_array[ii,5] + V_x_left
-            x_right_lane_boundary[ii] = high_level_solver_array[ii,4] + V_y_right
-            y_right_lane_boundary[ii] = high_level_solver_array[ii,5] - V_x_right
+            x_left_lane_boundary[ii] = x_path[ii] - V_y_left
+            y_left_lane_boundary[ii] = y_path[ii] + V_x_left
+            x_right_lane_boundary[ii] = x_path[ii] + V_y_right
+            y_right_lane_boundary[ii] = y_path[ii] - V_x_right
 
 
 
@@ -806,7 +850,7 @@ class MPCC_controller_class():
 
         # open loop prediction mean
         rgba = [0, 166, 214, 1.0]
-        transformed_x, transformed_y = self.rototranslate_path_2_abs_frame(output_array_low_level[:,3], output_array_low_level[:,4],x_y_yaw_rototranslation)
+        transformed_x, transformed_y = self.rototranslate_path_2_abs_frame(x_low_level,y_low_level,x_y_yaw_rototranslation)
         rviz_MPCC_path_message = self.produce_marker_array_rviz(transformed_x, transformed_y,rgba)
         self.rviz_MPC_path_publisher.publish(rviz_MPCC_path_message)
 
