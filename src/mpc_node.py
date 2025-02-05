@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
 import traceback
-from scipy.spatial.transform import Rotation
 import rospy
 import os
 from functions_for_MPCC_node_running import find_s_of_closest_point_on_global_path
@@ -109,14 +108,121 @@ class MPC_GUI_manager:
 
 
 
+class path_handeling_utilities_class():
+    def __init__(self):
+        pass
+
+
+    def produce_ylabels_4_local_kernelized_path(self,s,Ds_back,Ds_forward,xyyaw_ref_path,n):
+        #extract indexes of local path
+
+        mask = (self.s_4_local_path >= s - Ds_back) & (self.s_4_local_path <= s + Ds_forward)
+        local_path_length = Ds_back + Ds_forward
+        # Extract the indexes where the condition is true
+        indexes = np.where(mask)[0]
+        s_data_points =  self.s_4_local_path[indexes]  # This will have the local path parametrized starting from 0
+        x_data_points = self.x_4_local_path[indexes]
+        y_data_points = self.y_4_local_path[indexes]
+        heading_data_points = self.heading_4_local_path[indexes]
+        k_data_points = self.k_4_local_path[indexes]
+
+        # now rototranslate the x and y points to have the first point at the origin
+        x_data_points, y_data_points = self.rototranslate_abs_2_path_frame(x_data_points, y_data_points, xyyaw_ref_path)
+        heading_data_points = heading_data_points - heading_data_points[0]
+
+        # resample the data points to have a fixed number of points
+        # n = self.high_level_solver_generator_obj.n_points_kernelized 
+        labels_s = np.linspace(0, 1, n)
+        s_interp = (s_data_points - s_data_points[0])/local_path_length
+        labels_x = np.interp(labels_s, s_interp, x_data_points)
+        labels_y = np.interp(labels_s, s_interp, y_data_points)
+        labels_heading = np.interp(labels_s, s_interp, heading_data_points)
+        labels_k = np.interp(labels_s, s_interp, k_data_points)
+
+        return labels_x,labels_y,labels_heading,labels_k,local_path_length, labels_s
+
+    def rototranslate_abs_2_path_frame(self, x, y, xyyaw_ref_path):
+
+        # translate
+        x = x - x[0]
+        y = y - y[0]
+
+        # Create rotation matrix
+        rotation_angle = -xyyaw_ref_path[2]
+        cos_theta = np.cos(rotation_angle)
+        sin_theta = np.sin(rotation_angle)
+        R = np.array([[cos_theta, -sin_theta],
+                    [sin_theta,  cos_theta]])
+
+        # Apply rotation
+        rotated_points = R @ np.vstack((x, y))  # Matrix multiplication
+
+        transformed_x = rotated_points[0, :]
+        transformed_y = rotated_points[1, :]
+
+        return transformed_x, transformed_y
+
+    def relative_xyyaw_to_current_path(self,x_y_yaw_state,s):
+        # evaluate current reference path and derivatives needed for initial conditions
+        # find corresponding index for s on s_4_local path
+        current_path_index_on_4_local_path = np.argmin(np.abs(self.s_4_local_path - s))
+        x_ref_path = self.x_4_local_path[current_path_index_on_4_local_path]
+        y_ref_path = self.y_4_local_path[current_path_index_on_4_local_path]
+        dx_ds_ref_path = self.dx_ds[current_path_index_on_4_local_path]
+        dy_ds_ref_path = self.dy_ds[current_path_index_on_4_local_path]
+        #evaluate heading angle
+        heading_angle_path = np.arctan2(dy_ds_ref_path, dx_ds_ref_path)
+        #heading_angle_path = self.heading_4_local_path[current_path_index_on_4_local_path]
+
+        #self.local_path_ref_x,self.local_path_ref_y, self.local_path_rot_angle
+        # apply shift to the x y position of the car
+        pos_x_0 =  x_y_yaw_state[0] - x_ref_path
+        pos_y_0 =  x_y_yaw_state[1] - y_ref_path
+        #now rotate to have the first point aligned with the x axis
+        pos_x_init_rot =  pos_x_0 * np.cos(heading_angle_path) + pos_y_0 * np.sin(heading_angle_path)
+        pos_y_init_rot = -pos_x_0 * np.sin(heading_angle_path) + pos_y_0 * np.cos(heading_angle_path)
+
+        # apply rotation to yaw
+        yaw_init_rot = x_y_yaw_state[2] - heading_angle_path
+
+        # this is needed to keep the yaw angle from going over 2 pi
+        if yaw_init_rot > np.pi:
+            yaw_init_rot -= 2 * np.pi
+
+        elif yaw_init_rot < -np.pi:
+            yaw_init_rot += 2 * np.pi
+
+        #
+        xyyaw_ref_path = [x_ref_path, y_ref_path, heading_angle_path]
+
+
+        return pos_x_init_rot, pos_y_init_rot, yaw_init_rot, xyyaw_ref_path
+
+    def rototranslate_path_2_abs_frame(self, x, y, xyyaw_ref_path):
+        # xyyaw_ref_path is the xyyaw of the point on the reference path closest to the car
+
+        # Create rotation matrix
+        rotation_angle = xyyaw_ref_path[2]
+        cos_theta = np.cos(rotation_angle)
+        sin_theta = np.sin(rotation_angle)
+        R = np.array([[cos_theta, -sin_theta],
+                    [sin_theta,  cos_theta]])
+
+        # Apply rotation
+        rotated_points = R @ np.vstack((x, y))  # Matrix multiplication
+
+        # Apply translation
+        tx = xyyaw_ref_path[0]
+        ty = xyyaw_ref_path[1]
+        transformed_x = rotated_points[0, :] + tx
+        transformed_y = rotated_points[1, :] + ty
+
+        return transformed_x, transformed_y
 
 
 
 
-
-
-
-class MPCC_controller_class():
+class MPCC_controller_class(path_handeling_utilities_class):
     def __init__(self, car_number,dt_controller_rate):
 
         # set up default solver choices that will be overwritten by the dynamic reconfigure anyway so ok
@@ -137,7 +243,7 @@ class MPCC_controller_class():
         self.vx = 0
         self.vy = 0
         self.omega = 0
-        self.x_y_yaw_state = [2, 0, 0] # default to not start in a weird point with vicon_racetrack
+        self.x_y_yaw_state = [0, 0, 0] 
         self.pose_msg_time = rospy.get_rostime() # initialize time of pose message
 
 
@@ -259,8 +365,9 @@ class MPCC_controller_class():
 
 
         # ------ HIGH LEVEL SOLVER ------
-        pos_x_init_rot, pos_y_init_rot, yaw_init_rot,xyyaw_ref_path = self.relative_xyyaw_to_current_path(x_y_yaw_state) # current car state relative to current path index
-        labels_x,labels_y,labels_heading,labels_k,local_path_length,labels_s = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forward,xyyaw_ref_path)
+        pos_x_init_rot, pos_y_init_rot, yaw_init_rot,xyyaw_ref_path = self.relative_xyyaw_to_current_path(x_y_yaw_state,s) # current car state relative to current path index
+        n = self.high_level_solver_generator_obj.n_points_kernelized 
+        labels_x,labels_y,labels_heading,labels_k,local_path_length,labels_s = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forward,xyyaw_ref_path,n)
         problem_high_level = self.set_up_high_level_solver(pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length,labels_x,labels_y,labels_heading,labels_k)
 
         # call the high level solver
@@ -481,70 +588,11 @@ class MPCC_controller_class():
 
     
     
-    def produce_ylabels_4_local_kernelized_path(self,s,Ds_back,Ds_forward,xyyaw_ref_path):
-        #extract indexes of local path
 
-        mask = (self.s_4_local_path >= s - Ds_back) & (self.s_4_local_path <= s + Ds_forward)
-        local_path_length = Ds_back + Ds_forward
-        # Extract the indexes where the condition is true
-        indexes = np.where(mask)[0]
-        s_data_points =  self.s_4_local_path[indexes]  # This will have the local path parametrized starting from 0
-        x_data_points = self.x_4_local_path[indexes]
-        y_data_points = self.y_4_local_path[indexes]
-        heading_data_points = self.heading_4_local_path[indexes]
-        k_data_points = self.k_4_local_path[indexes]
-
-        # now rototranslate the x and y points to have the first point at the origin
-        x_data_points, y_data_points = self.rototranslate_abs_2_path_frame(x_data_points, y_data_points, xyyaw_ref_path)
-        heading_data_points = heading_data_points - heading_data_points[0]
-
-        # resample the data points to have a fixed number of points
-        n = self.high_level_solver_generator_obj.n_points_kernelized 
-        labels_s = np.linspace(0, 1, n)
-        s_interp = (s_data_points - s_data_points[0])/local_path_length
-        labels_x = np.interp(labels_s, s_interp, x_data_points)
-        labels_y = np.interp(labels_s, s_interp, y_data_points)
-        labels_heading = np.interp(labels_s, s_interp, heading_data_points)
-        labels_k = np.interp(labels_s, s_interp, k_data_points)
-
-        return labels_x,labels_y,labels_heading,labels_k,local_path_length, labels_s
        
 
 
-    def relative_xyyaw_to_current_path(self,x_y_yaw_state):
-        # evaluate current reference path and derivatives needed for initial conditions
-        # find corresponding index for s on s_4_local path
-        current_path_index_on_4_local_path = np.argmin(np.abs(self.s_4_local_path - self.s))
-        x_ref_path = self.x_4_local_path[current_path_index_on_4_local_path]
-        y_ref_path = self.y_4_local_path[current_path_index_on_4_local_path]
-        dx_ds_ref_path = self.dx_ds[current_path_index_on_4_local_path]
-        dy_ds_ref_path = self.dy_ds[current_path_index_on_4_local_path]
-        #evaluate heading angle
-        heading_angle_path = np.arctan2(dy_ds_ref_path, dx_ds_ref_path)
 
-        #self.local_path_ref_x,self.local_path_ref_y, self.local_path_rot_angle
-        # apply shift to the x y position of the car
-        pos_x_0 =  x_y_yaw_state[0] - x_ref_path
-        pos_y_0 =  x_y_yaw_state[1] - y_ref_path
-        #now rotate to have the first point aligned with the x axis
-        pos_x_init_rot =  pos_x_0 * np.cos(heading_angle_path) + pos_y_0 * np.sin(heading_angle_path)
-        pos_y_init_rot = -pos_x_0 * np.sin(heading_angle_path) + pos_y_0 * np.cos(heading_angle_path)
-
-        # apply rotation to yaw
-        yaw_init_rot = self.x_y_yaw_state[2] - heading_angle_path
-
-        # this is needed to keep the yaw angle from going over 2 pi
-        if yaw_init_rot > np.pi:
-            yaw_init_rot -= 2 * np.pi
-
-        elif yaw_init_rot < -np.pi:
-            yaw_init_rot += 2 * np.pi
-
-        #
-        xyyaw_ref_path = [x_ref_path, y_ref_path, heading_angle_path]
-
-
-        return pos_x_init_rot, pos_y_init_rot, yaw_init_rot, xyyaw_ref_path
 
 
 
@@ -738,47 +786,6 @@ class MPCC_controller_class():
 
 
 
-    def rototranslate_path_2_abs_frame(self, x, y, xyyaw_ref_path):
-        # xyyaw_ref_path is the xyyaw of the point on the reference path closest to the car
-
-        # Create rotation matrix
-        rotation_angle = xyyaw_ref_path[2]
-        cos_theta = np.cos(rotation_angle)
-        sin_theta = np.sin(rotation_angle)
-        R = np.array([[cos_theta, -sin_theta],
-                    [sin_theta,  cos_theta]])
-
-        # Apply rotation
-        rotated_points = R @ np.vstack((x, y))  # Matrix multiplication
-
-        # Apply translation
-        tx = xyyaw_ref_path[0]
-        ty = xyyaw_ref_path[1]
-        transformed_x = rotated_points[0, :] + tx
-        transformed_y = rotated_points[1, :] + ty
-
-        return transformed_x, transformed_y
-
-    def rototranslate_abs_2_path_frame(self, x, y, xyyaw_ref_path):
-
-        # translate
-        x = x - x[0]
-        y = y - y[0]
-
-        # Create rotation matrix
-        rotation_angle = -xyyaw_ref_path[2]
-        cos_theta = np.cos(rotation_angle)
-        sin_theta = np.sin(rotation_angle)
-        R = np.array([[cos_theta, -sin_theta],
-                    [sin_theta,  cos_theta]])
-
-        # Apply rotation
-        rotated_points = R @ np.vstack((x, y))  # Matrix multiplication
-
-        transformed_x = rotated_points[0, :]
-        transformed_y = rotated_points[1, :]
-
-        return transformed_x, transformed_y
 
 
     def produce_and_publish_rviz_visualization(self,

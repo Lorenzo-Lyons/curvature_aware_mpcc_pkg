@@ -24,7 +24,7 @@ high_level_solver_forces = forcespro.nlp.Solver.from_directory(path_to_solver)
 # ---- TESTING THE SOLVER by calling it with a test scenario ----
 
 V_target = 3
-local_path_length = V_target * solver_maker_obj.time_horizon * 1.2 # this is how it would be evalauted in the mpc
+local_path_length = V_target * solver_maker_obj.time_horizon * 1.5 # this is how it would be evalauted in the mpc
 q_con_high = 1 
 q_lag_high = 1 
 q_u_high = 0.01 #0.005 
