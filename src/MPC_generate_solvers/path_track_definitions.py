@@ -42,8 +42,8 @@ def generate_track(Checkpoints_x, Checkpoints_y, Checkpoints_s, Ds_back, Ds_forw
 
 
 
-def raw_track(choice):
-    n_checkpoints = 100
+def raw_track(choice,n_checkpoints):
+    #n_checkpoints = 100
     x_shift_vicon_lab = -3
     y_shift_vicon_lab = -2.2 #-2.7
 
@@ -825,11 +825,11 @@ def generate_fixed_path_quantities(lengthscale, lambda_val,n_points):
 
 
 
-def generate_path_data(track_choice):
+def generate_path_data(track_choice, n_checkpoints):
 
     # # --- set up track ---
     Checkpoints_x, Checkpoints_y, Checkpoints_s,\
-    Checkpoints_k = raw_track(track_choice) # Checkpoints_Rx , Checkpoints_Ry , Checkpoints_Rz,
+    Checkpoints_k = raw_track(track_choice, n_checkpoints) # Checkpoints_Rx , Checkpoints_Ry , Checkpoints_Rz,
 
 
     # add a loop before and a loop afterwards to generate extra reference for the MPC

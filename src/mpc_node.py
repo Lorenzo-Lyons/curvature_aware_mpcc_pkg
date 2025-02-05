@@ -292,6 +292,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         # Track related
         #track_choice = 'racetrack_vicon'
         track_choice = 'racetrack_vicon_2' # simpler racetrack
+        n_checkpoints = 100
 
         self.s_vals_global_path,\
         self.x_vals_global_path,\
@@ -302,7 +303,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.dx_ds, self.dy_ds, self.d2x_ds2, self.d2y_ds2,\
         self.k_vals_global_path,\
         self.k_4_local_path,\
-        self.heading_4_local_path = generate_path_data(track_choice)
+        self.heading_4_local_path = generate_path_data(track_choice, n_checkpoints)
 
 
         # set up publishers for robot velocity estimates
