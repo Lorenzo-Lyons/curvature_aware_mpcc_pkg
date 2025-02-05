@@ -70,6 +70,9 @@ def find_s_of_closest_point_on_global_path(x_y_state, s_vals_global_path, x_vals
     return s, index
 
 
+
+
+
 def straight(xlims, ylims, n_checkpoints):
     Checkpoints_x = np.linspace(xlims[0], xlims[1], n_checkpoints)
     Checkpoints_y = np.linspace(ylims[0], ylims[1], n_checkpoints)
