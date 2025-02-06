@@ -26,7 +26,7 @@ if not os.path.exists(path_to_build_acados_solver):
 os.chdir(path_to_build_acados_solver)
 
 ocp = solver_maker_obj.produce_ocp()
-solver = AcadosOcpSolver(ocp, json_file=solver_maker_obj.solver_name_acados + '.json') # this will regenerate the solver
+#solver = AcadosOcpSolver(ocp, json_file=solver_maker_obj.solver_name_acados + '.json') # this will regenerate the solver
 
 #build forces solver
 print('_________________________________________________')

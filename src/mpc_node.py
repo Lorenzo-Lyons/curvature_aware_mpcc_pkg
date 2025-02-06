@@ -5,6 +5,7 @@ import rospy
 import os
 from functions_for_MPCC_node_running import find_s_of_closest_point_on_global_path
 from MPC_generate_solvers.path_track_definitions import generate_path_data
+import time
 
 
 
@@ -369,11 +370,13 @@ class MPCC_controller_class(path_handeling_utilities_class):
         pos_x_init_rot, pos_y_init_rot, yaw_init_rot,xyyaw_ref_path = self.relative_xyyaw_to_current_path(x_y_yaw_state,s) # current car state relative to current path index
         n = self.high_level_solver_generator_obj.n_points_kernelized 
         labels_x,labels_y,labels_heading,labels_k,local_path_length,labels_s = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forward,xyyaw_ref_path,n)
-        problem_high_level = self.set_up_high_level_solver(pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length,labels_x,labels_y,labels_heading,labels_k)
-
+        problem_high_level = self.set_up_high_level_solver(pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length,labels_x,labels_y,labels_heading,labels_k,labels_s)
+        
+        start_solve_time = time.time()
         # call the high level solver
         if self.solver_software == 'FORCES':
             output_high_level, exitflag_high, info_high = self.high_level_solver.solve(problem_high_level)
+        
         elif self.solver_software == 'ACADOS':
             exitflag_high = self.high_level_solver.solve()
 
@@ -390,6 +393,13 @@ class MPCC_controller_class(path_handeling_utilities_class):
                     u_i_solution = self.high_level_solver.get(i, "u")
                 x_i_solution = self.high_level_solver.get(i, "x")
                 output_array_high_level[i] = np.concatenate((u_i_solution, x_i_solution))
+
+
+        end_solve_time = time.time()
+        solve_time = end_solve_time - start_solve_time
+        if solve_time > self.dt_controller_rate:
+            print(f'Solver time limit exceeded: {solve_time:.3f} seconds')
+
 
         # check if solver converged
         self.last_converged_high = self.check_solver_convergence(exitflag_high,self.last_converged_high,0) # last input is the choice between high and low level solver
@@ -597,7 +607,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
 
 
-    def set_up_high_level_solver(self,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length, labels_x,labels_y,labels_heading,labels_k):
+    def set_up_high_level_solver(self,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length, labels_x,labels_y,labels_heading,labels_k,labels_s):
         # set smalle oprimization step
         #self.high_level_solver.options_set('step_length',0.75)
 
@@ -613,7 +623,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
                                 
             params_i = np.array([V_target, local_path_length, self.q_con, self.q_lag, self.q_u_yaw_rate, self.qt_pos_high, self.qt_rot_high,self.lane_width,self.qt_s_high,*labels_k])
             # define first guess
-            X0_array_high_level = self.high_level_solver_generator_obj.produce_X0(self.V_target,local_path_length,labels_k)
+            X0_array_high_level = self.high_level_solver_generator_obj.produce_X0(self.V_target,local_path_length,labels_k,labels_s,labels_x,labels_y,labels_heading) 
         
         elif self.MPC_algorithm == 'MPCC_PP':
             #this uses different states and initial conditions
@@ -634,7 +644,8 @@ class MPCC_controller_class(path_handeling_utilities_class):
             # - set up initial guess and parameters
             x0_array_forces = X0_array_high_level.ravel()
             all_params_array_forces = param_array.ravel()
-            problem_high_leval = {"x0": x0_array_forces, "xinit": xinit, "all_parameters": all_params_array_forces} 
+            # , "reinitialize": False
+            problem_high_leval = {"x0": x0_array_forces, "xinit": xinit, "all_parameters": all_params_array_forces, "reinitialize": False} 
         else: # ACADOS
 
             # assign initial state

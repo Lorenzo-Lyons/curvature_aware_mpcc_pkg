@@ -5,10 +5,10 @@ import forcespro.nlp
 import matplotlib.pyplot as plt
 from mpc_node import path_handeling_utilities_class
 import optuna
+import time
 
 # select the solver to build MPCC or CAMPCC
-simulation_steps = 300
-warm_up_steps = 30
+warm_up_steps = 15
 MPC_algorithm = 'CAMPCC' # 'MPCC' - 'CAMPCC' - 'MPCC_PP'
 plot_sim = False
 
@@ -17,7 +17,7 @@ from functions_for_MPCC_node_running import find_s_of_closest_point_on_global_pa
 from MPC_generate_solvers.path_track_definitions import generate_path_data
 
 track_choice = 'racetrack_vicon_2' # simpler racetrack
-n_checkpoints = 1000
+n_checkpoints = 100
 
 s_vals_global_path,\
 x_vals_global_path,\
@@ -101,16 +101,28 @@ estimated_ds = V_target * dt_controller_rate  # esitmated ds from previous time 
 lim_x = [np.min(x_4_local_path) - 1, np.max(x_4_local_path) + 1]
 lim_y = [np.min(y_4_local_path) - 1, np.max(y_4_local_path) + 1]
                         
+solve_time_max = 0.05 # seconds to close the loop
+overtime_penalty_coeff = 1
 
 # -------------------------------- simualtion loop --------------------------------
 def objective(trial):
+    start_time = time.time()
+    if MPC_algorithm == 'MPCC_PP':
+        q_sdot = trial.suggest_float("q_sdot", 0.001, 0.1, log=True)
+
+    if MPC_algorithm == 'MPCC' or MPC_algorithm == 'MPCC_PP':
+        q_lag = trial.suggest_float("q_lag", 0.001, 50, log=True) #0.5
+    elif MPC_algorithm == 'CAMPCC':
+        q_lag = 0.5 # it is acually not used in the CAMPPC
+
+    # universal parameters
     q_con = trial.suggest_float("q_con", 0.001, 1, log=True)
-    q_lag = trial.suggest_float("q_lag", 0.001, 50, log=True)5 #0.5 
     q_u_yaw_rate = trial.suggest_float("q_u_yaw_rate", 0.001, 1, log=True) #0.03 #0.005 
     qt_pos_high = trial.suggest_float("qt_pos_high", 0.01, 10, log=True)
-    qt_rot_high = trial.suggest_float("qt_rot_high", 0.001, 10, log=True)
     qt_s_high = trial.suggest_float("qt_s_high", 0.01, 20, log=True)
-    q_sdot = trial.suggest_float("q_sdot", 0.001, 0.1, log=True)
+
+    # fixed parameters
+    qt_rot_high = 1 #trial.suggest_float("qt_rot_high", 0.001, 10, log=True) This is really not needed but ok
 
     # assign initial position as starting on the path at a certain s_0
     s_0 = 0
@@ -129,12 +141,15 @@ def objective(trial):
     s_history = [s_0]
     x_history = [x_0]
     y_history = [y_0]
+    solver_time_history = []
 
     if plot_sim:
         plt.ion()
     t = 1
     ds_jump = 1 # initialize to a positive value
     while ds_jump > -1:
+        # take time now
+
         # find the closest point on the path
 
         # find the closest point on the global path (i.e. measure s)
@@ -185,19 +200,22 @@ def objective(trial):
 
         # set up initial guess
         if MPC_algorithm == 'MPCC' or MPC_algorithm == 'CAMPCC':
-            X0_array_high_level = high_level_solver_generator_obj.produce_X0(V_target,local_path_length,labels_k)
+            X0_array_high_level = high_level_solver_generator_obj.produce_X0(V_target,local_path_length,labels_k,labels_s,labels_x,labels_y,labels_heading)
         elif MPC_algorithm == 'MPCC_PP':
             X0_array_high_level = high_level_solver_generator_obj.produce_X0(V_target,local_path_length,labels_x,labels_y,labels_heading)
 
         X0_array_high_level = X0_array_high_level.ravel() # unpack row-wise
 
         # produce problem as a dictionary for forces
-        problem = {"x0": X0_array_high_level, "xinit": xinit, "all_parameters": param_array} # all_parameters
+        # "reinitialize": True  will use the provided x0 instead of the internally sotred solution
+        problem = {"x0": X0_array_high_level, "xinit": xinit, "all_parameters": param_array, "reinitialize": False} # all_parameters
 
 
 
         # --- solve the problem ---
+        solve_time_start = time.time()
         output, exitflag, info = high_level_solver_forces.solve(problem)
+        solve_time_end = time.time()
         output_array_high_level = np.array(list(output.values()))
         
         # extract the x-y path
@@ -259,17 +277,37 @@ def objective(trial):
         ds_jump = s_history[t] - s_history[t-1]
         t += 1 # update t
 
+        solver_time = solve_time_end - solve_time_start
+        solver_time_history.append(solver_time)
+
         if plot_sim:
             plt.pause(0.01)
 
     # Example loss function (you'd replace this with actual training loss)
-    loss = t * dt_controller_rate
+    # evaluate mean solver time
+    for i in range(len(solver_time_history)):
+        if solver_time_history[i] < solve_time_max:
+            solver_time_history[i] = 0
+        else:
+            solver_time_history[i] = overtime_penalty_coeff * (solver_time_history[i]/solve_time_max-1)**2
+    solve_time_penalty = np.mean(solver_time_history)
+
+    loss = t * dt_controller_rate + solve_time_penalty
+
+    end_time = time.time()
+    loop_time = end_time - start_time  # Calculate the elapsed time
+    
+    print(f"Execution time: {loop_time:.6f} seconds")
+    print(f"solve_time_penalty: {solve_time_penalty:.6f} seconds")
+    print('')
+    print('')
+
     
     return loss
 
 # 
 study = optuna.create_study(direction="minimize")
-study.optimize(objective, n_trials=1000)
+study.optimize(objective, n_trials=150)
 
 print("Best hyperparameters:", study.best_params)
 
@@ -278,7 +316,7 @@ study.trials_dataframe().to_csv("study_results.csv")
 optuna.visualization.plot_optimization_history(study).show()
 optuna.visualization.plot_param_importances(study).show()
 
-
+plt.show()
 
 if plot_sim:
     plt.ioff()  # Turn off interactive mode

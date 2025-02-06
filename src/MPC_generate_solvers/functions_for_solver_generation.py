@@ -18,12 +18,12 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         self.solver_name_acados = 'high_level_reference_generator_' + MPC_algorithm
         self.solver_name_forces = 'high_level_forces_reference_generator_' + MPC_algorithm
 
-        self.n_points_kernelized = 81 # number of points in the kernelized path (41 for reference)
+        self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
         self.time_horizon = 1.5
         self.N = 30 # stages
         self.max_yaw_rate = 10 # based on w = V / R = k * V so 2 * V is the maximum yaw rate 
-        self.nx = 7
-        self.nu = 2
+        self.nx = 7 # pos_x, pos_y, yaw, s, ref_x, ref_y, ref_heading
+        self.nu = 2 # u_yaw_dot, slack
         self.n_parameters = 9 + self.n_points_kernelized
         self.n_inequality_constraints = 1
         
@@ -149,11 +149,12 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         codeoptions.noVariableElimination = 1  # enable or disable variable simplification (like if first stage is constrained)
         codeoptions.nlp.stack_parambounds = True  # determines if the parameters can simply be stacked (but not sure exactly what it does)
 
+
         # set tolerances
-        codeoptions.nlp.TolStat = 1e-6  # inf norm tol. on stationarity
-        codeoptions.nlp.TolEq = 1e-5  # tol. on equality constraints
-        codeoptions.nlp.TolIneq = 1e-5  # tol. on inequality constraints
-        codeoptions.nlp.TolComp = 1e-5  # tol. on complementarity
+        codeoptions.nlp.TolStat = 1e-3  # inf norm tol. on stationarity
+        codeoptions.nlp.TolEq = 1e-3  # tol. on equality constraints
+        codeoptions.nlp.TolIneq = 1e-3  # tol. on inequality constraints
+        codeoptions.nlp.TolComp = 1e-3  # tol. on complementarity
 
         # set warm start behaviour for dual variables (so always warm start from solver perspective, even if in practice you give it a vector of zeros)
         codeoptions.init = 2  # 0 cold, 1 centered, 2 warm
@@ -163,10 +164,15 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
         codeoptions.solvemethod = 'SQP_NLP' # 'PDIP_NLP' # changing to non linear primal dual method  'SQP_NLP'
         # NOTE that by default the solver uses a single sqp iteration so you need to increase the number of iterations
-        codeoptions.sqp_nlp.maxqps = 3
-        codeoptions.sqp_nlp.reg_hessian = 1e-5  # regularization of hessian (default is 5 * 10^(-9))
-        # codeoptions.sqp_nlp.rti = 1
-        # codeoptions.sqp_nlp.maxSQPit = 5
+        #codeoptions.nlp.hessian_approximation = 'gauss-newton'
+        #codeoptions.solver_timeout = 1  # Set a 40 ms time limit we assume the controller rate is 20Hz but you need some time to do other things in the control loop
+        codeoptions.solver_exit_external = 1
+        codeoptions.sqp_nlp.maxqps = 4
+        codeoptions.sqp_nlp.maxSQPit = 10
+        codeoptions.sqp_nlp.reg_hessian = 1e-6  # regularization of hessian (default is 5 * 10^(-9))
+        #codeoptions.sqp_nlp.use_line_search = False  # Enable line search (default)
+
+        codeoptions.parallel = 1 # this doesn't really do much
 
 
         return model,codeoptions
@@ -303,11 +309,11 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
 
 
-    def produce_X0(self,V_target,local_path_length,labels_k_params):
+    def produce_X0(self,V_target,local_path_length,labels_k,labels_s,labels_x,labels_y,labels_heading):
         # Initial guess for state trajectory
         X0_array = np.zeros((self.N+1,self.nu +  self.nx))
-        # z = yaw_dot slack s_dot x y yaw s 
-        #     0       1     2     3 4 5   6
+        # z = yaw_dot slack pos_x, pos_y, yaw, s, ref_x, ref_y, ref_heading
+        #     0       1     2      3       4   5  6      7      8
 
         # assign initial guess for the states by forward euler integration on th ereference path
 
@@ -316,11 +322,11 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
         s_0_vec = np.linspace(0, V_target * self.time_horizon, N_0+1)
 
-        # interpolate to get kurvature values
-        normalized_s_4_kernel_path = np.linspace(0.0, 1.0, self.n_points_kernelized)
+        # interpolate to get curvature values
+        #normalized_s_4_kernel_path = np.linspace(0.0, 1.0, self.n_points_kernelized)
 
         s_star_0 = s_0_vec / local_path_length # normalize s
-        k_0_vals = np.interp(s_star_0, normalized_s_4_kernel_path, labels_k_params)
+        k_0_vals = np.interp(s_star_0, labels_s, labels_k)
         x_ref_0 = np.zeros(N_0+1)
         y_ref_0 = np.zeros(N_0+1)
         ref_heading_0 = np.zeros(N_0+1)
@@ -341,15 +347,19 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         u_yaw_rate_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), u_yaw_rate_0)
 
 
-
         # assign values to the array
+        # z = yaw_dot slack pos_x, pos_y, yaw, s, ref_x, ref_y, ref_heading
+        #     0       1     2      3       4   5  6      7      8
+
         X0_array[:,0] = u_yaw_rate_0
         X0_array[:,1] = np.zeros(self.N+1) # slack variable should be zero
-        X0_array[:,2] = V_target # s_dot can be around V_target
-        X0_array[:,3] = x_ref_0
-        X0_array[:,4] = y_ref_0
-        X0_array[:,5] = ref_heading_0
-        X0_array[:,6] = s_0_vec
+        X0_array[:,2] = x_ref_0 # s_dot can be around V_target
+        X0_array[:,3] = y_ref_0
+        X0_array[:,4] = ref_heading_0
+        X0_array[:,5] = s_0_vec
+        X0_array[:,6] = x_ref_0
+        X0_array[:,7] = y_ref_0
+        X0_array[:,8] = ref_heading_0
 
 
         return X0_array
@@ -364,7 +374,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         self.solver_name_acados = 'high_level_acados_MPCC_PP'
         self.solver_name_forces = 'high_level_forces_MPCC_PP'
 
-        self.n_points_kernelized = 81 # number of points in the kernelized path (41 for reference)
+        self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
         self.time_horizon = 1.5
         self.N = 30 # stages
         self.max_yaw_rate = 10 # based on w = V / R = k * V so 2 * V is the maximum yaw rate 
@@ -513,10 +523,10 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         codeoptions.nlp.stack_parambounds = True  # determines if the parameters can simply be stacked (but not sure exactly what it does)
 
         # set tolerances
-        # codeoptions.nlp.TolStat = 1e-6  # inf norm tol. on stationarity
-        # codeoptions.nlp.TolEq = 1e-5  # tol. on equality constraints
-        # codeoptions.nlp.TolIneq = 1e-5  # tol. on inequality constraints
-        # codeoptions.nlp.TolComp = 1e-5  # tol. on complementarity
+        codeoptions.nlp.TolStat = 1e-3  # inf norm tol. on stationarity
+        codeoptions.nlp.TolEq = 1e-3  # tol. on equality constraints
+        codeoptions.nlp.TolIneq = 1e-3  # tol. on inequality constraints
+        codeoptions.nlp.TolComp = 1e-3  # tol. on complementarity
 
         # set warm start behaviour for dual variables (so always warm start from solver perspective, even if in practice you give it a vector of zeros)
         codeoptions.init = 2  # 0 cold, 1 centered, 2 warm
@@ -526,10 +536,15 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
 
         codeoptions.solvemethod = 'SQP_NLP' # 'PDIP_NLP' # changing to non linear primal dual method  'SQP_NLP'
         # NOTE that by default the solver uses a single sqp iteration so you need to increase the number of iterations
-        codeoptions.sqp_nlp.maxqps = 3
-        #codeoptions.sqp_nlp.reg_hessian = 1e-5  # regularization of hessian (default is 5 * 10^(-9))
-        # codeoptions.sqp_nlp.rti = 1
-        #codeoptions.sqp_nlp.maxSQPit = 30
+        #codeoptions.nlp.hessian_approximation = 'gauss-newton'
+        #codeoptions.solver_timeout = 1  # Set a 40 ms time limit we assume the controller rate is 20Hz but you need some time to do other things in the control loop
+        codeoptions.solver_exit_external = 1
+        codeoptions.sqp_nlp.maxqps = 4
+        codeoptions.sqp_nlp.maxSQPit = 10
+        codeoptions.sqp_nlp.reg_hessian = 1e-6  # regularization of hessian (default is 5 * 10^(-9))
+        #codeoptions.sqp_nlp.use_line_search = False  # Enable line search (default)
+
+        codeoptions.parallel = 1 # this doesn't really do much
 
 
         return model,codeoptions
@@ -588,6 +603,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
             100 * slack**2 
         return j
     
+
     def objective_forces(self, z, p):
         u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s = self.unpack_state(z)
         V_target, local_path_length, q_con, q_lag, q_u, q_sdot, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
