@@ -446,7 +446,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         ocp.constraints.ubu = np.array([+self.max_yaw_rate,100,self.max_sdot]) 
 
         # define lane boundary constraints
-        ocp.model.con_h_expr = self.lane_boundary_constraint(pos_x,pos_y,s,slack,lane_width,local_path_length,labels_x, labels_y)  # Define h(x, u)
+        ocp.model.con_h_expr = self.lane_boundary_constraint(pos_x,pos_y,s,slack,lane_width,local_path_length,labels_x, labels_y ,labels_heading)  # Define h(x, u)
         ocp.constraints.lh = np.array([0.0])  # Lower bound (h_min)
         ocp.constraints.uh = np.array([1000])  # Upper bound (h_max)
 
@@ -655,7 +655,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         V_target, local_path_length, q_con, q_lag, q_u, q_sdot, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
         return np.array(self.high_level_planner_continous_dynamics(V_target,u_yaw_dot,yaw,s_dot))
 
-    def lane_boundary_constraint(self,pos_x,pos_y,s,slack,lane_width,local_path_length,labels_x, labels_y):
+    def lane_boundary_constraint(self,pos_x,pos_y,s,slack,lane_width,local_path_length,labels_x, labels_y, labels_heading):
         # produce the path relative quantities
         # produce x, y, heading of the path
         s_star = s / local_path_length # normalize s
@@ -663,13 +663,16 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         left_side = K_x_star @ self.Kxx_inv
         ref_x = left_side @ labels_x
         ref_y = left_side @ labels_y
+        ref_heading = left_side @ labels_heading
 
-        return ((lane_width+slack)/2)**2 - ((pos_x - ref_x)**2  + (pos_y - ref_y)**2)  
+        err_lat_squared = ((pos_x - ref_x) * -np.sin(ref_heading) + (pos_y - ref_y) * np.cos(ref_heading)) ** 2
+
+        return ((lane_width+slack)/2)**2 - err_lat_squared #((pos_x - ref_x)**2  + (pos_y - ref_y)**2)  
 
     def lane_boundary_constraint_forces(self,z, p):
         u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s = self.unpack_state(z)
         V_target, local_path_length, q_con, q_lag, q_u, q_sdot, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
-        return np.array([self.lane_boundary_constraint(pos_x,pos_y,s,slack,lane_width,local_path_length,labels_x, labels_y)])
+        return np.array([self.lane_boundary_constraint(pos_x,pos_y,s,slack,lane_width,local_path_length,labels_x, labels_y,labels_heading)])
 
 
 
