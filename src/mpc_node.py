@@ -6,10 +6,10 @@ import os
 from functions_for_MPCC_node_running import find_s_of_closest_point_on_global_path
 from MPC_generate_solvers.path_track_definitions import generate_path_data
 import time
+from std_msgs.msg import String
 
 
-
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32, Float32MultiArray
 from geometry_msgs.msg import Point, PoseWithCovarianceStamped
 from visualization_msgs.msg import MarkerArray, Marker
 from datetime import datetime
@@ -318,6 +318,11 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.vy_publisher = rospy.Publisher('vy_mpc_' + str(car_number), Float32, queue_size=1)
         self.w_publisher = rospy.Publisher('w_mpc_' + str(car_number), Float32, queue_size=1)
 
+        # publish mpc solution as an array
+        self.mpc_high_level_solution_publisher = rospy.Publisher('mpc_high_level_solution_' + str(car_number), Float32MultiArray, queue_size=1)
+        self.mpc_low_level_solution_publisher = rospy.Publisher('mpc_low_level_solution_' + str(car_number), Float32MultiArray, queue_size=1)
+
+
         # set up subscribers (inputs to the controller)
         self.vicon_subscriber = rospy.Subscriber('vicon/jetracer' + str(car_number), PoseWithCovarianceStamped, self.vicon_subscriber_callback)
 
@@ -326,6 +331,31 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.steering_publisher = rospy.Publisher('steering_' + str(car_number), Float32, queue_size=1)
         self.comptime_publisher = rospy.Publisher('comptime_' + str(car_number), Float32, queue_size=1)
 
+        # set up publishers for internal mpc node states (selections from GUI)
+        self.GUI_param_names_publisher = rospy.Publisher('GUI_param_names_' + str(car_number), String, queue_size=1)
+        self.GUI_param_names_list = ['V_target',
+                                'q_con',
+                                'q_lag',
+                                'q_u_yaw_rate',
+                                'q_sdot',
+                                'qt_pos_high',
+                                'qt_rot_high',
+                                'qt_s_high',
+                                'q_v', 
+                                'q_pos', 
+                                'q_rot', 
+                                'qt_pos', 
+                                'qt_rot', 
+                                'q_acc',
+                                'lane_width',
+                                'minimal_plotting', 
+                                'delay_compensation', 
+                                'Solver_software', 
+                                'MPC_algorithm', 
+                                'Dynamic_model']
+        # msg_GUI_fields = String()
+        # msg_GUI_fields.data = ",".join(GUI_param_names_list)
+        # self.msg_GUI_fields = msg_GUI_fields #save to publish later
 
 
 
@@ -463,6 +493,13 @@ class MPCC_controller_class(path_handeling_utilities_class):
         # check if solver converged
         self.last_converged_low = self.check_solver_convergence(exitflag_low,self.last_converged_low, 1) # last input is the choice between high and low level solver
         
+
+        output_array_high_msg = Float32MultiArray()
+        output_array_high_msg.data = output_array_high_level.flatten().tolist()  # Convert NumPy array to list
+        self.mpc_high_level_solution_publisher.publish(output_array_high_msg)
+        
+        self.mpc_low_level_solution_publisher.publish(Float32MultiArray(data=output_array_low_level.flatten().tolist()))
+
         # extract solution for plotting
         x_low_level = output_array_low_level[:,3]
         y_low_level = output_array_low_level[:,4]
@@ -491,6 +528,39 @@ class MPCC_controller_class(path_handeling_utilities_class):
         stop_clock_time = rospy.get_rostime()
         total_time = (stop_clock_time - start_clock_time).to_sec()
         self.comptime_publisher.publish(total_time)
+
+        # publish GUI values
+        GUI_param_values = [self.V_target,
+                            self.q_con,
+                            self.q_lag,
+                            self.q_u_yaw_rate,
+                            self.q_sdot,
+                            self.qt_pos_high,
+                            self.qt_rot_high,
+                            self.qt_s_high,
+                            self.q_v, 
+                            self.q_pos, 
+                            self.q_rot, 
+                            self.qt_pos, 
+                            self.qt_rot, 
+                            self.q_acc,
+                            self.lane_width,
+                            self.minimal_plotting, 
+                            self.delay_compensation, 
+                            self.solver_software, 
+                            self.MPC_algorithm, 
+                            self.dynamic_model]
+        # convert values to a list of strings
+        GUI_param_values_str = [str(i) for i in GUI_param_values]
+        # create a name-value pair list with the names from the GUI_param_names_list
+        list_name_val_str = []
+        for i in range(len(GUI_param_values)):
+            list_name_val_str.append(self.GUI_param_names_list[i])
+            list_name_val_str.append(GUI_param_values_str[i])
+        
+        msg_GUI = String()
+        msg_GUI.data = ",".join(list_name_val_str)
+        self.GUI_param_names_publisher.publish(msg_GUI)
 
 
     def set_solver_type(self,solver_software, MPC_algorithm, dynamic_model):

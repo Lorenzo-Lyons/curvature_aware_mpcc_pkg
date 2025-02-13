@@ -292,7 +292,13 @@ def objective(trial):
             solver_time_history[i] = overtime_penalty_coeff * (solver_time_history[i]/solve_time_max-1)**2
     solve_time_penalty = np.mean(solver_time_history)
 
-    loss = t * dt_controller_rate + solve_time_penalty
+    # check if something wnet wrong by filtering for too small lap times
+    if t * dt_controller_rate < s_vals_global_path[-1]/(V_target)*0.5: # this means that the lap time was too small to be credible
+        loss = s_vals_global_path[-1]/(V_target) # this value is the time that you would have if you travel exaclty on the centre line
+    else:
+        loss = t * dt_controller_rate + solve_time_penalty
+
+    
 
     end_time = time.time()
     loop_time = end_time - start_time  # Calculate the elapsed time
@@ -306,12 +312,15 @@ def objective(trial):
     return loss
 
 # 
-study = optuna.create_study(direction="minimize")
-study.optimize(objective, n_trials=150)
+study_name = "optuna_study_results" + MPC_algorithm + ".csv"
+storage_name = "sqlite:///"+study_name+".db"  # SQLite database file
+
+study = optuna.create_study(study_name=study_name, direction="minimize", storage=storage_name, load_if_exists=True)
+study.optimize(objective, n_trials=100)
 
 print("Best hyperparameters:", study.best_params)
 
-study.trials_dataframe().to_csv("study_results.csv")
+study.trials_dataframe().to_csv(study_name)
 
 optuna.visualization.plot_optimization_history(study).show()
 optuna.visualization.plot_param_importances(study).show()
