@@ -245,6 +245,14 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
 
     def high_level_planner_continous_dynamics(self,s,local_path_length,labels_k,V_target,ref_x,ref_y,ref_heading,u_yaw_dot,pos_x,pos_y,yaw):
+        # Check if s is casadi or numpy
+        if isinstance(s, casadi.MX) or isinstance(s, casadi.SX):
+            cos = casadi.cos
+            sin = casadi.sin
+        else:
+            cos = np.cos
+            sin = np.sin
+        
         try:
             from path_track_definitions import generate_fixed_path_quantities
         except:
@@ -265,24 +273,24 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
         # --- define the dynamic constraint ---
         # "robot" moving at constant speed
-        x_dot = V_target * np.cos(yaw)
-        y_dot = V_target * np.sin(yaw)
+        x_dot = V_target * cos(yaw)
+        y_dot = V_target * sin(yaw)
         yaw_dot = u_yaw_dot
 
         # s_dot definition depending on the selected algorithm
         if self.MPC_algorithm == 'MPCC':
             s_dot = V_target
         else:
-            v_tan = V_target * np.cos(yaw - ref_heading)
-            p = (pos_x - ref_x) * np.sin(ref_heading)  + (pos_y - ref_y) * -np.cos(ref_heading)
+            v_tan = V_target * cos(yaw - ref_heading)
+            p = (pos_x - ref_x) * sin(ref_heading)  + (pos_y - ref_y) * -np.cos(ref_heading)
             den_corrected = self.soft_min(1+p*k,0.3)
             projection_ratio = 1 / den_corrected
             #projection_ratio = 1 / (1+p*k)
 
             s_dot = v_tan * projection_ratio
 
-        x_ref_dot = s_dot * np.cos(ref_heading) 
-        y_ref_dot = s_dot * np.sin(ref_heading)
+        x_ref_dot = s_dot * cos(ref_heading) 
+        y_ref_dot = s_dot * sin(ref_heading)
         ref_heading_dot = k * s_dot
 
         state_dot = [x_dot,y_dot, yaw_dot, s_dot ,x_ref_dot, y_ref_dot, ref_heading_dot]
@@ -296,7 +304,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
         z = casadi.vertcat(u, x)
         u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(z)
         V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_k = self.unpack_parameters(p)
-        return np.array(self.high_level_planner_continous_dynamics(s,local_path_length,labels_k,V_target,ref_x,ref_y,ref_heading,u_yaw_dot,pos_x,pos_y,yaw))
+        return self.high_level_planner_continous_dynamics(s,local_path_length,labels_k,V_target,ref_x,ref_y,ref_heading,u_yaw_dot,pos_x,pos_y,yaw)
 
     def lane_boundary_constraint(self,pos_x,pos_y,ref_x,ref_y,slack,lane_width):
         return ((lane_width+slack)/2)**2 - ((pos_x - ref_x)**2  + (pos_y - ref_y)**2)  
@@ -304,7 +312,7 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
     def lane_boundary_constraint_forces(self,z, p):
         u_yaw_dot,slack, pos_x,pos_y,yaw,s, ref_x, ref_y, ref_heading = self.unpack_state(z)
         V_target, local_path_length, q_con, q_lag, q_u, qt_pos, qt_rot, lane_width, qt_s_high ,labels_k= self.unpack_parameters(p)
-        return np.array([self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width)])
+        return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width)]
 
 
 
@@ -653,7 +661,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         z = casadi.vertcat(u, x)
         u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s = self.unpack_state(z)
         V_target, local_path_length, q_con, q_lag, q_u, q_sdot, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
-        return np.array(self.high_level_planner_continous_dynamics(V_target,u_yaw_dot,yaw,s_dot))
+        return self.high_level_planner_continous_dynamics(V_target,u_yaw_dot,yaw,s_dot)
 
     def lane_boundary_constraint(self,pos_x,pos_y,s,slack,lane_width,local_path_length,labels_x, labels_y, labels_heading):
         # produce the path relative quantities
@@ -672,7 +680,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
     def lane_boundary_constraint_forces(self,z, p):
         u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s = self.unpack_state(z)
         V_target, local_path_length, q_con, q_lag, q_u, q_sdot, qt_pos, qt_rot, lane_width, qt_s_high ,labels_x, labels_y, labels_heading = self.unpack_parameters(p)
-        return np.array([self.lane_boundary_constraint(pos_x,pos_y,s,slack,lane_width,local_path_length,labels_x, labels_y,labels_heading)])
+        return self.lane_boundary_constraint(pos_x,pos_y,s,slack,lane_width,local_path_length,labels_x, labels_y,labels_heading)
 
 
 

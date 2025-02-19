@@ -3,6 +3,7 @@ from dynamic_reconfigure.client import Client
 import optuna
 import matplotlib.pyplot as plt
 import time
+from std_msgs.msg import Float32
 
 
 # select algorithm to tune
@@ -14,7 +15,7 @@ rospy.init_node("optuna_node")  # Initialize the node
 GUI_client_simulator = Client("/dart_simulator_node", timeout=5)  # Change "your_node_name" to the correct node name
 GUI_mpc_node = Client("/mpc_node", timeout=5)  # Change "your_node_name" to the correct node name
 
-
+max_laps = 1
 
 
 
@@ -49,11 +50,11 @@ def set_mpc_node_GUI(trial,GUI_mpc_node):
     #config_mpc = GUI_mpc_node.get_configuration()
     #cange parameters of interest
     if MPC_algorithm == 'MPCC':
-        algorithm_number = 1
+        algorithm_number = 0
     elif MPC_algorithm == 'CAMPCC':
-        algorithm_number = 2
+        algorithm_number = 1
     elif MPC_algorithm == 'MPCC_PP':
-        algorithm_number = 3
+        algorithm_number = 2
 
     # set GUI params
     GUI_mpc_node.update_configuration({"MPC_algorithm": algorithm_number})
@@ -61,13 +62,26 @@ def set_mpc_node_GUI(trial,GUI_mpc_node):
     GUI_mpc_node.update_configuration({"q_u_yaw_rate": q_u_yaw_rate})
     GUI_mpc_node.update_configuration({"qt_pos_high": qt_pos_high})
     GUI_mpc_node.update_configuration({"qt_s_high": qt_s_high})
+
+    # make sure velocity is 2.5
+    GUI_mpc_node.update_configuration({"V_target": 2.5})
+
+
+    
+
     
 
 
 config_simulator = GUI_client_simulator.get_configuration()
-print(config_simulator)  # Print all available parameters
+#print(config_simulator)  # Print all available parameters
 config_mpc = GUI_mpc_node.get_configuration()
-print(config_mpc)
+#print(config_mpc)
+
+
+
+
+
+
 
 
 # -------------------------------- simualtion loop --------------------------------
@@ -77,19 +91,20 @@ def objective(trial):
     set_mpc_node_GUI(trial,GUI_mpc_node)
 
     start_time = time.time()
+    interrupt = False
+    s_1_prev = rospy.wait_for_message("/s_1", Float32)
+    lap_count = 0
+    while lap_count <= max_laps:
+        # read most recent message from s_1 topic
+        s_1_now = rospy.wait_for_message("/s_1", Float32)
+        # chek if the lap was completed
+        if s_1_now.data < s_1_prev.data:
+            lap_count += 1
+            print("Lap completed: ", lap_count-1)
+        # update the previous value
+        s_1_prev = s_1_now
 
-
-    # set these parameters from the GUI
-
-
-
-
-
-
-
-
-
-
+    return time.time() - start_time
 
 
 
