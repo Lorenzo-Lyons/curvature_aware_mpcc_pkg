@@ -71,7 +71,7 @@ high_level_solver_forces = forcespro.nlp.Solver.from_directory(path_to_solver)
 
 
 # ---- TESTING THE SOLVER by calling it with a test scenario ----
-V_target = 2
+V_target = 2.5
 local_path_length = V_target * high_level_solver_generator_obj.time_horizon * 1.5 # this is how it would be evalauted in the mpc
 lane_width = 0.6
 

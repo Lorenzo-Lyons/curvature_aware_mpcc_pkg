@@ -317,6 +317,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.vx_publisher = rospy.Publisher('vx_mpc_' + str(car_number), Float32, queue_size=1)
         self.vy_publisher = rospy.Publisher('vy_mpc_' + str(car_number), Float32, queue_size=1)
         self.w_publisher = rospy.Publisher('w_mpc_' + str(car_number), Float32, queue_size=1)
+        self.s_publisher = rospy.Publisher('s_' + str(car_number), Float32, queue_size=1)
 
         # publish mpc solution as an array
         self.mpc_high_level_solution_publisher = rospy.Publisher('mpc_high_level_solution_' + str(car_number), Float32MultiArray, queue_size=1)
@@ -389,6 +390,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
                                                                   self.previous_path_index, estimated_ds)
         self.previous_path_index = self.current_path_index  # update index along the path to know where to search in next iteration
         self.s = s
+        self.s_publisher.publish(Float32(self.s)) # publish s for simulation purpouses
 
 
         # produce Chebyshev coefficients that represent local path
@@ -1186,6 +1188,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.vx_publisher.publish(Float32(self.vx))
         self.vy_publisher.publish(Float32(self.vy))
         self.w_publisher.publish(Float32(self.omega))
+        
 
 
 
