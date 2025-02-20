@@ -28,11 +28,19 @@ GUI_mpc_node = Client("/mpc_node", timeout=5)
 max_laps = 3
 
 
+# set dart simulator parameters
+GUI_client_simulator.update_configuration({"disturbance": True})
+GUI_client_simulator.update_configuration({"dynamic_model_choice": 3})
+
+
+
 
 
 lane_width = 0.6
-lane_violation_cost = 0.5
+lane_violation_cost = 10
 GUI_mpc_node.update_configuration({"lane_width": lane_width})
+
+
 
 
 
@@ -76,7 +84,8 @@ def set_mpc_node_GUI(trial,GUI_mpc_node):
         algorithm_number = 2
 
     # set GUI params
-    GUI_mpc_node.update_configuration({"Solver_software": 1})
+    GUI_mpc_node.update_configuration({"Solver_software": 1}) # forces
+    GUI_mpc_node.update_configuration({"Dynamic_model": 1})   # dynamic bicycle model
     GUI_mpc_node.update_configuration({"MPC_algorithm": algorithm_number})
     GUI_mpc_node.update_configuration({"q_con": q_con})
     GUI_mpc_node.update_configuration({"q_u_yaw_rate": q_u_yaw_rate})
