@@ -1,16 +1,27 @@
-from MPC_generate_solvers.functions_for_solver_generation import generate_high_level_path_planner_ocp, generate_high_level_MPCC_PP
-import numpy as np
 import os
-import forcespro.nlp
-import matplotlib.pyplot as plt
-from mpc_node import path_handeling_utilities_class
 import optuna
-import time
 
 
+ROS_study = True
 MPC_algorithm = 'MPCC_PP' # 'MPCC' - 'CAMPCC' - 'MPCC_PP'
-study_name = "optuna_study_results" + MPC_algorithm + ".csv"
-storage_name = "sqlite:///"+study_name+".db"  # SQLite database file
+
+
+
+abspath = os.path.abspath(__file__)
+dname = os.path.dirname(abspath)
+os.chdir(dname)
+
+# save study
+
+# optuna_studies/
+
+if ROS_study:
+    study_name = "optuna_studies/optuna_study_results_ROS_" + MPC_algorithm
+else:
+    study_name = "optuna_studies/optuna_study_results_" + MPC_algorithm
+
+
+storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
 
 study = optuna.load_study(study_name=study_name, storage=storage_name)
 
@@ -21,5 +32,5 @@ print("Best parameters:", study.best_params)
 optuna.visualization.plot_optimization_history(study).show()
 optuna.visualization.plot_param_importances(study).show()
 
-plt.show()
+
 

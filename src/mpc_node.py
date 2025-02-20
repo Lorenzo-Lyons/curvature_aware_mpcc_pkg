@@ -318,6 +318,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.vy_publisher = rospy.Publisher('vy_mpc_' + str(car_number), Float32, queue_size=1)
         self.w_publisher = rospy.Publisher('w_mpc_' + str(car_number), Float32, queue_size=1)
         self.s_publisher = rospy.Publisher('s_' + str(car_number), Float32, queue_size=1)
+        self.distance_from_centerline_publisher = rospy.Publisher('distance_from_centerline_' + str(car_number), Float32, queue_size=1)
 
         # publish mpc solution as an array
         self.mpc_high_level_solution_publisher = rospy.Publisher('mpc_high_level_solution_' + str(car_number), Float32MultiArray, queue_size=1)
@@ -385,13 +386,13 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         # find the closest point on the global path (i.e. measure s)
         estimated_ds = self.vx * self.dt_controller_rate  # esitmated ds from previous time instant (velocity is measured now so not accounting for acceleration, but this is only for the search of the s initial s value, so no need to be accurate)
-        s, self.current_path_index = find_s_of_closest_point_on_global_path(np.array([x_y_yaw_state[0], x_y_yaw_state[1]]), self.s_vals_global_path,
+        s, self.current_path_index, dist_to_centerline = find_s_of_closest_point_on_global_path(np.array([x_y_yaw_state[0], x_y_yaw_state[1]]), self.s_vals_global_path,
                                                                   self.x_vals_global_path, self.y_vals_global_path,
                                                                   self.previous_path_index, estimated_ds)
         self.previous_path_index = self.current_path_index  # update index along the path to know where to search in next iteration
         self.s = s
         self.s_publisher.publish(Float32(self.s)) # publish s for simulation purpouses
-
+        self.distance_from_centerline_publisher.publish(Float32(dist_to_centerline)) # publish distance from centerline for simulation purpouses    
 
         # produce Chebyshev coefficients that represent local path
         Ds_forward = 1.5 * V_target * self.high_level_solver_generator_obj.time_horizon #  self.dtt * self.high_level_solver_generator_obj.N
@@ -441,7 +442,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         # convert output array if MPCC_PP is used
         if self.MPC_algorithm == 'MPCC_PP':
             # reconstruct the path related quantities from the labels
-            #              u_yaw_rate slack s_dot   x y yaw s (MPCC_PP)
+            #              u_yaw_rate slack s_dot   x y yaw s (MPCC_PP) u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s
             # extract 
             yaw_rate_high_level = output_array_high_level[:,0]
             x_high_level = output_array_high_level[:,3]

@@ -601,8 +601,8 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         ref_heading = left_side @ labels_heading
 
         # stage cost
-        err_lag_squared = ((pos_x - ref_x) *  np.cos(ref_heading)  + (pos_y - ref_y) * np.sin(ref_heading)) ** 2
-        err_lat_squared = ((pos_x - ref_x) * -np.sin(ref_heading) + (pos_y - ref_y) * np.cos(ref_heading)) ** 2
+        err_lag_squared = ((pos_x - ref_x) *  casadi.cos(ref_heading)  + (pos_y - ref_y) * casadi.sin(ref_heading)) ** 2
+        err_lat_squared = ((pos_x - ref_x) * -casadi.sin(ref_heading) + (pos_y - ref_y) * casadi.cos(ref_heading)) ** 2
 
         j = q_con * err_lat_squared +\
             q_lag * err_lag_squared +\
@@ -626,10 +626,10 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         ref_y = left_side @ labels_y
         ref_heading = left_side @ labels_heading
 
-        err_lag_squared = ((pos_x - ref_x) *  np.cos(ref_heading)  + (pos_y - ref_y) * np.sin(ref_heading)) ** 2
+        err_lag_squared = ((pos_x - ref_x) *  casadi.cos(ref_heading)  + (pos_y - ref_y) * casadi.sin(ref_heading)) ** 2
 
         # terminal cost
-        dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
+        dot_direction = (casadi.cos(ref_heading) * casadi.cos(yaw)) + (casadi.sin(ref_heading) * casadi.sin(yaw)) # evaluate car angle relative to a straight path
         misalignment = - dot_direction # incentivise alligning with the path
         # higher penalty costs on v and path tracking, plus an dditional penalty for not alligning with the path at the end
         err_pos_squared_t = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
@@ -673,7 +673,7 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
         ref_y = left_side @ labels_y
         ref_heading = left_side @ labels_heading
 
-        err_lat_squared = ((pos_x - ref_x) * -np.sin(ref_heading) + (pos_y - ref_y) * np.cos(ref_heading)) ** 2
+        err_lat_squared = ((pos_x - ref_x) * -casadi.sin(ref_heading) + (pos_y - ref_y) * casadi.cos(ref_heading)) ** 2
 
         return ((lane_width+slack)/2)**2 - err_lat_squared #((pos_x - ref_x)**2  + (pos_y - ref_y)**2)  
 
@@ -1024,7 +1024,7 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         w = x[5]
 
         #return np.array([vx,0,w,th_input,0,st_input])
-        return np.array(self.kinematic_bicycle_continuous_dynamics(th_input,st_input,vx,yaw))
+        return self.kinematic_bicycle_continuous_dynamics(th_input,st_input,vx,yaw)
 
     def dynamic_bicycle_continous_dynamics_forces(self,x,u):
         # extract control inputs
@@ -1091,13 +1091,13 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w = self.unpack_state(z)
         return self.objective_terminal_cost(pos_x,pos_y,yaw,vx, x_ref, y_ref, yaw_ref,V_target,q_v, qt_pos, qt_rot)
     
-    def lane_boundary_constraint(self,pos_x,pos_y,ref_x,ref_y,slack,lane_width):
-        return ((lane_width+slack)/2)**2 - ((pos_x - ref_x)**2  + (pos_y - ref_y)**2)  
+    def lane_boundary_constraint(self,pos_x,pos_y,x_path,y_path,slack,lane_width):
+        return ((lane_width+slack)/2)**2 - ((pos_x - x_path)**2  + (pos_y - y_path)**2)  
 
     def lane_boundary_constraint_forces(self,z, p):
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w = self.unpack_state(z)
         V_target, q_v, q_pos, q_rot, q_u, qt_pos, qt_rot, q_acc, x_ref, y_ref, yaw_ref, x_path, y_path, lane_width = self.unpack_parameters(p)
-        return np.array([self.lane_boundary_constraint(pos_x,pos_y,x_path,y_path,slack,lane_width)])
+        return [self.lane_boundary_constraint(pos_x,pos_y,x_path,y_path,slack,lane_width)]
 
     def produce_X0(self,V_target,
                     x_high_level,

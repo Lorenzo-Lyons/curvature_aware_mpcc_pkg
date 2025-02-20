@@ -22,7 +22,7 @@ font_color = (96, 96, 96)  # White
 
 def teleop_keyboard():
     # Publishing safety value
-    pub_safety_value = rospy.Publisher('safety_value', Float32, queue_size=8)
+    pub_safety_value = rospy.Publisher('safety_value', Float32, queue_size=1)
 
     rospy.init_node('teleop_keyboard', anonymous=True)
     rate = rospy.Rate(10)  # 10hz

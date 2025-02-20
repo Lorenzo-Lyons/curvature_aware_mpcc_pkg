@@ -7,6 +7,14 @@ from mpc_node import path_handeling_utilities_class
 import optuna
 import time
 
+# change folder to where this script is located
+import os
+abspath = os.path.abspath(__file__)
+dname = os.path.dirname(abspath)
+os.chdir(dname)
+
+
+
 # select the solver to build MPCC or CAMPCC
 warm_up_steps = 15
 MPC_algorithm = 'CAMPCC' # 'MPCC' - 'CAMPCC' - 'MPCC_PP'
@@ -311,49 +319,26 @@ def objective(trial):
     
     return loss
 
-# 
-study_name = "optuna_study_results" + MPC_algorithm + ".csv"
-storage_name = "sqlite:///"+study_name+".db"  # SQLite database file
+# save study
+study_name = "optuna_studies/optuna_study_results_" + MPC_algorithm
+storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
 
-study = optuna.create_study(study_name=study_name, direction="minimize", storage=storage_name, load_if_exists=True)
-study.optimize(objective, n_trials=100)
+study = optuna.create_study(study_name=study_name, direction="minimize", storage=storage_name, load_if_exists=False)
+study.optimize(objective, n_trials=2)
 
 print("Best hyperparameters:", study.best_params)
 
 study.trials_dataframe().to_csv(study_name)
+
+
+# try reloading study
+study = optuna.load_study(study_name=study_name, storage=storage_name)
+
 
 optuna.visualization.plot_optimization_history(study).show()
 optuna.visualization.plot_param_importances(study).show()
 
 plt.show()
 
-if plot_sim:
-    plt.ioff()  # Turn off interactive mode
-
-# extract useful points
-s_history = s_history[warm_up_steps+1:-1]
-x_history = x_history[warm_up_steps+1:-1]
-y_history = y_history[warm_up_steps+1:-1]
-
-# add color coded plot of x-y according the s_dot
-s_dot_history = np.diff(s_history)/dt_controller_rate
-
-# plot the results
-axes_track.clear()
-axes_track.plot(x_vals_global_path, y_vals_global_path, 'gray', linewidth=2,lineStyle='--')
-axes_track.axis('equal')
-axes_track.set_title('Global track')
-axes_track.set_xlabel('x [m]')
-axes_track.set_ylabel('y [m]')
-scatter = axes_track.scatter(x_history[:-1], y_history[:-1], c=s_dot_history, cmap='viridis',vmin=V_target-0.5)
-# Add a colorbar to the figure
-fig_track.colorbar(scatter, ax=axes_track, label="Speed (s_dot)")
-
-
-#plot simulation results of full trajectory
-# plt.figure()
-# plt.plot(s_history[warm_up_steps+1:-1])
-
-plt.show()  # Show final static plot
 
 

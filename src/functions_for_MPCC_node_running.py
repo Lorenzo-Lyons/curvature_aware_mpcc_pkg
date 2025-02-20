@@ -53,7 +53,12 @@ def find_s_of_closest_point_on_global_path(x_y_state, s_vals_global_path, x_vals
     #this offers some protection against failing the local search but it doesn't fix all of the possible problems
     #for example if pth loops back (like a bean shape)
     # then you can still get an error (If you have lane boundary information then you colud put a check on the actual value of the min)
-    if local_index == 0 or local_index == s_search_vector.size-1:
+
+    # evalaute distance from the found minimum to the actual state
+    dist_to_state = math.dist([x_search_vector[local_index], y_search_vector[local_index]], x_y_state[0:2])
+
+
+    if local_index == 0 or local_index == s_search_vector.size-1 or dist_to_state > 1: # trigger search on global path
         # print('search vector was not long enough, doing search on full path')
         distances_2 = np.zeros(s_vals_global_path.size)
         for ii in range(0, s_vals_global_path.size):
@@ -67,7 +72,8 @@ def find_s_of_closest_point_on_global_path(x_y_state, s_vals_global_path, x_vals
 
 
     s = float(s_vals_global_path[index])
-    return s, index
+    final_dist_to_state = math.dist([x_vals_global_path[index], y_vals_global_path[index]], x_y_state[0:2])
+    return s, index, final_dist_to_state
 
 
 
