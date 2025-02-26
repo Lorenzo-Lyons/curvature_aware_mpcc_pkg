@@ -374,7 +374,6 @@ class generate_high_level_path_planner_ocp(): # inherits from DART system identi
 
 
 
-
 class generate_high_level_MPCC_PP(): # inherits from DART system identification
 
     def __init__(self):
@@ -726,14 +725,6 @@ class generate_high_level_MPCC_PP(): # inherits from DART system identification
 
 
         return X0_array
-
-
-
-
-
-
-
-
 
 
 
@@ -1124,6 +1115,383 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         X0_array[:,5] = yaw_high_level
         X0_array[:,6] = V_target # assign target speed as first guess 
         X0_array[:,8] = yaw_rate_high_level # input of high level is the yaw rate
+
+        return X0_array
+
+
+
+class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end inherits from DART system identification
+    # here we need the dynamic constraints of teh low level controller
+
+    def __init__(self,dynamic_model):
+        
+        self.dynamic_model = dynamic_model
+        self.solver_name_acados = 'single_layer_acados_CAMPCC_' + dynamic_model 
+        self.solver_name_forces = 'single_layer_forces_CAMPCC_' + dynamic_model
+
+        self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
+        self.time_horizon = 1.5
+        self.N = 30 # stages
+        self.nx = 10 # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
+        self.nu = 3 # throttle, stteering, slack
+        self.n_parameters = 9 + self.n_points_kernelized
+        self.n_inequality_constraints = 1
+        
+    
+    def produce_ocp(self):
+        from casadi import vertcat, MX
+        from acados_template import  AcadosOcp, AcadosModel
+
+        # seting up ACADOS solver
+        x = MX.sym('x', self.nx)
+        u = MX.sym('u', self.nu)
+        p = MX.sym('p', self.n_parameters) # stage-wise parameters
+
+
+        # Create model object
+        model = AcadosModel()
+        model.name = self.solver_name_acados
+        model.x = x
+        model.u = u
+        model.p = p
+
+        #unpack states
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(vertcat(model.u,model.x))
+
+        # unpack parameters
+        V_target, local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, labels_k = self.unpack_parameters(model.p)
+
+        # assign dynamic constraint
+        model.f_expl_expr = vertcat(*self.single_layer_continous_dynamics(local_path_length,labels_k,
+                                        th_input,st_input,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading)) # make into vertical vector for casadi
+
+
+        # generate optimal control problem
+        ocp = AcadosOcp()
+        ocp.model = model
+        ocp.dims.N = self.N  # number of stages
+        ocp.cost.cost_type = 'EXTERNAL'
+        ocp.cost.cost_type_e = 'EXTERNAL'
+
+        # --- set up the cost functions ---
+        ocp.model.cost_expr_ext_cost  =  self.objective(th_input,st_input,slack,pos_x,pos_y,ref_x,ref_y,q_con,q_u,vx,q_acc) 
+        ocp.model.cost_expr_ext_cost_e =  self.objective_terminal_cost(ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot,s,qt_s_high,V_target)
+                
+        # constraints
+        ocp.constraints.constr_type = 'BGH'
+        # u = [throttle, steer, slack_var]
+        ocp.constraints.lbu = np.array([0,-1, 0])
+        ocp.constraints.ubu = np.array([+1,+1, 100]) # high value for slack variable
+        ocp.constraints.idxbu = np.array([0, 1, 2])
+
+        # define lane boundary constraints
+        ocp.model.con_h_expr = self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width)  # Define h(x, u)
+        ocp.constraints.lh = np.array([0.0])  # Lower bound (h_min)
+        ocp.constraints.uh = np.array([1000])  # Upper bound (h_max)
+
+        # Initial state constraint
+        ocp.constraints.x0 = np.zeros(self.nx)  # This is a default value, it will be updated at runtime
+
+        # 3. Set solver options
+        ocp.solver_options.qp_solver = 'FULL_CONDENSING_HPIPM' # FULL_CONDENSING_HPIPM, FULL_CONDENSING_QPOASES FULL_CONDENSING_DAQP
+        ocp.solver_options.hessian_approx = 'EXACT' # GAUSS_NEWTON, EXACT
+        ocp.solver_options.integrator_type = 'ERK' # IRK, ERK
+        ocp.solver_options.sim_method_num_steps = 1  # Number of sub-steps in each interval for integration purpouses
+        ocp.solver_options.nlp_solver_type = 'SQP_RTI' # SQP   SQP_RTI
+        ocp.solver_options.tf = self.time_horizon  # time horizon in seconds
+
+        # messing with the convergence criteria
+        ocp.solver_options.qp_solver_warm_start = 1 # 0: no warm start, 1: warm start 2 : hot start
+        ocp.solver_options.globalization = 'FIXED_STEP' # 'MERIT_BACKTRACKING', 'FIXED_STEP' # fixed is the default
+        #ocp.solver_options.nlp_solver_max_iter = 20  # Maximum SQP iterations
+        #ocp.solver_options.qp_solver_iter_max = 5
+        ocp.solver_options.print_level = 0 # no print
+        #ocp.solver_options.tol = 0.001
+
+        # Initialize parameters with default values (this step is important to avoid dimension mismatch)
+        ocp.parameter_values = np.zeros(self.n_parameters)
+        return ocp
+
+    def produce_FORCES_model_codeoptions(self):
+        import forcespro.nlp
+
+        model = forcespro.nlp.SymbolicModel(self.N+1) # this plus one is to keep the same output dimensions as the acados model that has 1 extra state
+
+        model.xinitidx = np.array(range(self.nu,self.nu + self.nx))  # variables in these positions are affected by initial state constraint. (I.e. they cannot change in the first stage)
+        
+        #theese parameters are the same for all the solvers
+        model.nvar = self.nu + self.nx         # number of stage variables
+        model.neq = self.nx                    # number of equality constraints (dynamic model)
+        model.npar = self.n_parameters         # number of parameters
+        model.E = np.concatenate([np.zeros((self.nx, self.nu)), np.eye(self.nx)], axis=1)  # This extraction matrix tells forces what variables are states and what are inputs
+
+        # set fixed input bounds since they will not change at runtime
+        # generate inf upper and lower bounds for the inputs and states
+                            #  th_input,st_input,slack,pos_x ,pos_y, yaw, vx,    vy,  w,    s,    ref_x,ref_y,ref_heading
+        model.lb = np.array([0.0,       -1.0,    0,    -1000,-1000, -1000,-1000,-1000,-1000,-1000,-1000 ,-1000,-1000])  # lower bound on inputs
+        model.ub = np.array([1.0,        1.0,    +10,  +1000,+1000, +1000,+1000,+1000,+1000,+1000,+1000, +1000,+1000])  # upper bound on inputs
+
+        # Set objective
+        for i in range(self.N):
+            model.objective[i] = self.objective_forces  # eval_obj is a Python function
+        model.objective[self.N] = self.objective_terminal_forces
+  
+        # Set dynamic constraint
+        model.continuous_dynamics = self.single_layer_planner_continous_dynamics_forces
+
+        # Set non linear constraints
+        model.nh = self.n_inequality_constraints
+        model.ineq = self.lane_boundary_constraint_forces
+        model.hl = np.array([0.0])
+        model.hu = np.array([1000.0])  # upper bound on inequality constraints
+        
+
+
+        # Define solver options
+        codeoptions = forcespro.CodeOptions('FORCESNLPsolver') #get standard options
+        # continuous dynamics options
+        codeoptions.nlp.integrator.type = 'ERK4'
+        codeoptions.nlp.integrator.Ts = self.time_horizon / (self.N+1)
+        codeoptions.nlp.integrator.nodes = 1 # intermediate nodes for the integrator
+
+        codeoptions.name = self.solver_name_forces
+        codeoptions.printlevel = 0  #  1: summary line after each solve,   0: no prit
+        codeoptions.BuildSimulinkBlock = 0  # disable simulink block generation because we don't need it
+        codeoptions.maxit = 200  # maximum iterations
+        codeoptions.noVariableElimination = 1  # enable or disable variable simplification (like if first stage is constrained)
+        codeoptions.nlp.stack_parambounds = True  # determines if the parameters can simply be stacked (but not sure exactly what it does)
+
+
+        # set tolerances
+        codeoptions.nlp.TolStat = 1e-3  # inf norm tol. on stationarity
+        codeoptions.nlp.TolEq = 1e-3  # tol. on equality constraints
+        codeoptions.nlp.TolIneq = 1e-3  # tol. on inequality constraints
+        codeoptions.nlp.TolComp = 1e-3  # tol. on complementarity
+
+        # set warm start behaviour for dual variables (so always warm start from solver perspective, even if in practice you give it a vector of zeros)
+        codeoptions.init = 2  # 0 cold, 1 centered, 2 warm
+
+        #set overwrite behviour
+        codeoptions.overwrite = 1 # 0 never, 1 always, 2 (Defaul) ask
+
+        codeoptions.solvemethod = 'SQP_NLP' # 'PDIP_NLP' # changing to non linear primal dual method  'SQP_NLP'
+        # NOTE that by default the solver uses a single sqp iteration so you need to increase the number of iterations
+        #codeoptions.nlp.hessian_approximation = 'gauss-newton'
+        #codeoptions.solver_timeout = 1  # Set a 40 ms time limit we assume the controller rate is 20Hz but you need some time to do other things in the control loop
+        codeoptions.solver_exit_external = 1
+        codeoptions.sqp_nlp.maxqps = 4
+        codeoptions.sqp_nlp.maxSQPit = 10
+        codeoptions.sqp_nlp.reg_hessian = 1e-6  # regularization of hessian (default is 5 * 10^(-9))
+        #codeoptions.sqp_nlp.use_line_search = False  # Enable line search (default)
+
+        codeoptions.parallel = 1 # this doesn't really do much
+
+
+        return model,codeoptions
+
+    def unpack_state(self,z):
+        th_input = z[0]
+        st_input = z[1]    
+        slack = z[2]
+        pos_x = z[3]
+        pos_y = z[4]
+        yaw =   z[5]
+        vx = z[6]
+        vy = z[7]
+        w = z[8]
+        s = z[9]
+        ref_x = z[10]       # path reference point x
+        ref_y = z[11]       # path reference point y
+        ref_heading = z[12] # path reference heading
+
+        return th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
+
+    def unpack_parameters(self,p):
+        V_target =  p[0]      # target longitudinal_speed/s_dot depending on the formulation MPCC/CAMPCC respectively            # time step
+        local_path_length = p[1] # length of the path segment
+        q_con = p[2]  # position tracking
+        q_u = p[3]  # control input tracking
+        q_acc   = p[4]  # acceleration tracking
+        qt_pos = p[5]  # terminal cost (position relative to final path direction)
+        qt_rot = p[6]  # (orientation relative to final path direction)
+        lane_width = p[7]  # lane width
+        qt_s_high = p[8]  # terminal cost on s
+        labels_k = p[9:] # kernelized path labels
+        return V_target, local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, labels_k
+    
+
+    def objective(self,th_input,st_input,slack,pos_x,pos_y,ref_x,ref_y,q_con,q_u,vx,q_acc):
+
+        # from kinemaitc bicycle model
+        Fx_wheels = self.motor_force(th_input,vx,self.a_m_self,self.b_m_self,self.c_m_self)\
+                    + self.rolling_friction(vx,self.a_f_self,self.b_f_self,self.c_f_self,self.d_f_self)
+        acc_x =  Fx_wheels / self.m_self 
+        q_acc * acc_x ** 2
+
+        err_lat_squared = (pos_x - ref_x)**2 + (pos_y - ref_y)**2            
+        j_path = q_con * err_lat_squared
+        
+        j = j_path\
+            + q_u * th_input ** 2\
+            + q_u * st_input ** 2\
+            + q_acc * acc_x ** 2\
+            + 100 * slack**2
+
+        return j
+    
+    def objective_forces(self, z, p):
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
+        V_target, local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, labels_k = self.unpack_parameters(p)
+
+        return self.objective(th_input,st_input,slack,pos_x,pos_y,ref_x,ref_y,q_con,q_u,vx,q_acc)
+
+    def objective_terminal_cost(self, ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot,s,qt_s_high,V_target):
+        # terminal cost
+        dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
+        misalignment = -dot_direction # incentivise alligning with the path
+        # higher penalty costs on v and path tracking, plus an dditional penalty for not alligning with the path at the end
+        err_pos_squared_t = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
+        j_term_pos =    qt_pos * err_pos_squared_t + \
+                        qt_rot * misalignment+\
+                        - qt_s_high * (s/(self.time_horizon*V_target))**2  # this is the main incentive for racing
+        
+        return j_term_pos
+    
+    def objective_terminal_forces(self, z, p):
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
+        V_target, local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, labels_k = self.unpack_parameters(p)
+        return self.objective_terminal_cost(ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot,s,qt_s_high,V_target)
+
+
+    def single_layer_continous_dynamics(self,local_path_length,labels_k,
+                                        th_input,st_input,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading):
+        # Check if s is casadi or numpy
+        if isinstance(s, casadi.MX) or isinstance(s, casadi.SX):
+            cos = casadi.cos
+            sin = casadi.sin
+        else:
+            cos = np.cos
+            sin = np.sin
+        
+        try:
+            from path_track_definitions import generate_fixed_path_quantities
+        except:
+            from .path_track_definitions import generate_fixed_path_quantities
+        # --- vehicle dynamics constraint ---
+        if self.dynamic_model == "kinematic_bicycle":
+            x_dot, y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.kinematic_bicycle_continuous_dynamics(th_input,st_input,vx,yaw)
+        elif self.dynamic_model == "dynamic_bicycle":
+            x_dot, y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_input,st_input,vx,vy,w,yaw)
+        else:
+            print('Dynamic_constraint: Invalid dynamic model setting')
+
+        # evalaute curvature of the path as a function of s
+        path_lengthscale = 1.3/self.n_points_kernelized
+        lambda_val = 0.0001**2
+        Kxx_inv, normalized_s_4_kernel_path = generate_fixed_path_quantities(path_lengthscale,
+                                                                            lambda_val,
+                                                                            self.n_points_kernelized)
+        s_star = s / local_path_length # normalize s
+
+        K_x_star = K_matern2_kernel(s_star, normalized_s_4_kernel_path,
+                                path_lengthscale,1,self.n_points_kernelized)      
+        left_side = K_x_star @ Kxx_inv
+        k = left_side @ labels_k
+
+        # s_dot definition depending on the selected algorithm
+        # for now we assume vy is small
+        v_tan = vx * cos(yaw - ref_heading)
+        p = (pos_x - ref_x) * sin(ref_heading)  + (pos_y - ref_y) * -cos(ref_heading)
+        den_corrected = self.soft_min(1+p*k,0.3)
+        projection_ratio = 1 / den_corrected
+        #projection_ratio = 1 / (1+p*k)
+        s_dot = v_tan * projection_ratio
+
+        # forwards integrate the reference path
+        x_ref_dot = s_dot * cos(ref_heading) 
+        y_ref_dot = s_dot * sin(ref_heading)
+        ref_heading_dot = k * s_dot
+
+
+
+        # state is  pos_x, pos_y,  yaw,    vx,     vy,     w,      s,     ref_x,     ref_y,     ref_heading 
+        state_dot = [x_dot,y_dot, yaw_dot, vx_dot, vy_dot, w_dot,  s_dot ,x_ref_dot, y_ref_dot, ref_heading_dot]
+        return state_dot
+    
+    def soft_min(self, x, min_val):
+        sharpness = 10
+        return min_val + 0.5*(1 + np.tanh(sharpness*(x-min_val)))*(x-min_val)
+    
+    def single_layer_planner_continous_dynamics_forces(self, x, u, p):
+        z = casadi.vertcat(u, x)
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
+        V_target, local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, labels_k = self.unpack_parameters(p)
+        return self.single_layer_continous_dynamics(local_path_length,labels_k,
+                                                    th_input,st_input,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading)
+
+    def lane_boundary_constraint(self,pos_x,pos_y,ref_x,ref_y,slack,lane_width):
+        return ((lane_width+slack)/2)**2 - ((pos_x - ref_x)**2  + (pos_y - ref_y)**2)  
+
+    def lane_boundary_constraint_forces(self,z, p):
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
+        V_target, local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, labels_k = self.unpack_parameters(p)
+        return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width)]
+
+
+
+
+    def produce_X0(self,V_target,local_path_length,labels_k,labels_s,labels_x,labels_y,labels_heading):
+        # Initial guess for state trajectory
+        X0_array = np.zeros((self.N+1,self.nu +  self.nx))
+        # z = yaw_dot slack pos_x, pos_y, yaw, s, ref_x, ref_y, ref_heading
+        #     0       1     2      3       4   5  6      7      8
+
+        # assign initial guess for the states by forward euler integration on th ereference path
+
+        # refinement for first guess needs to be higher because the forward euler is a bit lame
+        N_0 = 1000
+
+        s_0_vec = np.linspace(0, V_target * self.time_horizon, N_0+1)
+
+        # interpolate to get curvature values
+        #normalized_s_4_kernel_path = np.linspace(0.0, 1.0, self.n_points_kernelized)
+
+        s_star_0 = s_0_vec / local_path_length # normalize s
+        k_0_vals = np.interp(s_star_0, labels_s, labels_k)
+        x_ref_0 = np.zeros(N_0+1)
+        y_ref_0 = np.zeros(N_0+1)
+        ref_heading_0 = np.zeros(N_0+1)
+        dt = self.time_horizon / N_0
+        u_yaw_rate_0 = np.zeros(N_0+1)
+        for i in range(1,N_0+1):
+            x_ref_0[i] = x_ref_0[i-1] + V_target * dt * np.cos(ref_heading_0[i-1])
+            y_ref_0[i] = y_ref_0[i-1] + V_target * dt * np.sin(ref_heading_0[i-1])
+            ref_heading_0[i] = ref_heading_0[i-1] + k_0_vals[i-1] * V_target * dt
+
+            u_yaw_rate_0[i-1] = (ref_heading_0[i] - ref_heading_0[i-1] )/ dt
+
+        # now down sample to the N points
+        s_0_vec = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), s_0_vec)
+        x_ref_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), x_ref_0)
+        y_ref_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), y_ref_0)
+        ref_heading_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), ref_heading_0)
+        u_yaw_rate_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), u_yaw_rate_0)
+
+
+        # assign values to the array
+        # z = yaw_dot slack pos_x, pos_y, yaw, s, ref_x, ref_y, ref_heading
+        #     0       1     2      3       4   5  6      7      8
+
+        X0_array[:,0] = u_yaw_rate_0
+        X0_array[:,1] = np.zeros(self.N+1) # slack variable should be zero
+        X0_array[:,2] = x_ref_0 # s_dot can be around V_target
+        X0_array[:,3] = y_ref_0
+        X0_array[:,4] = ref_heading_0
+        X0_array[:,5] = s_0_vec
+        X0_array[:,6] = x_ref_0
+        X0_array[:,7] = y_ref_0
+        X0_array[:,8] = ref_heading_0
+
 
         return X0_array
 

@@ -14,11 +14,15 @@ dname = os.path.dirname(abspath)
 os.chdir(dname)
 
 
+# how many laps for each trial ?
+max_laps = 3
+
+
 
 # select the solver to build MPCC or CAMPCC
 warm_up_steps = 15
 MPC_algorithm = 'CAMPCC' # 'MPCC' - 'CAMPCC' - 'MPCC_PP'
-plot_sim = False
+plot_sim = True
 
 # load test track
 from functions_for_MPCC_node_running import find_s_of_closest_point_on_global_path
@@ -111,9 +115,13 @@ lim_y = [np.min(y_4_local_path) - 1, np.max(y_4_local_path) + 1]
                         
 solve_time_max = 0.05 # seconds to close the loop
 overtime_penalty_coeff = 1
+lane_violation_cost = 10
+
+
 
 # -------------------------------- simualtion loop --------------------------------
 def objective(trial):
+    completed_laps = 0
     start_time = time.time()
     if MPC_algorithm == 'MPCC_PP':
         q_sdot = trial.suggest_float("q_sdot", 0.001, 0.1, log=True)
@@ -155,16 +163,24 @@ def objective(trial):
         plt.ion()
     t = 1
     ds_jump = 1 # initialize to a positive value
-    while ds_jump > -1:
-        # take time now
 
-        # find the closest point on the path
+    # lane_bound_violation penalty
+    lane_bound_penalty = 0
 
-        # find the closest point on the global path (i.e. measure s)
+    while completed_laps < max_laps:
+        if ds_jump < 0:
+            completed_laps += 1
+            print(f'Completed laps: {completed_laps}')
 
-        s, previous_path_index_global = find_s_of_closest_point_on_global_path(np.array([x_y_yaw_state[0], x_y_yaw_state[1]]), s_vals_global_path,
+
+
+        s, previous_path_index_global, distance_from_centerline_now = find_s_of_closest_point_on_global_path(np.array([x_y_yaw_state[0], x_y_yaw_state[1]]), s_vals_global_path,
                                                                                 x_vals_global_path, y_vals_global_path,
                                                                                 previous_path_index_global, estimated_ds)
+
+        if distance_from_centerline_now > lane_width/2: 
+            lane_bound_penalty += lane_violation_cost * (distance_from_centerline_now - lane_width/2)
+
 
         # determine the closest point on local path position
         current_path_index_on_4_local_path = np.argmin(np.abs(s_4_local_path - s))
@@ -291,28 +307,29 @@ def objective(trial):
         if plot_sim:
             plt.pause(0.01)
 
-    # Example loss function (you'd replace this with actual training loss)
-    # evaluate mean solver time
-    for i in range(len(solver_time_history)):
-        if solver_time_history[i] < solve_time_max:
-            solver_time_history[i] = 0
-        else:
-            solver_time_history[i] = overtime_penalty_coeff * (solver_time_history[i]/solve_time_max-1)**2
-    solve_time_penalty = np.mean(solver_time_history)
+    t_loss = t - warm_up_steps # remove the warm up steps
 
-    # check if something wnet wrong by filtering for too small lap times
-    if t * dt_controller_rate < s_vals_global_path[-1]/(V_target)*0.5: # this means that the lap time was too small to be credible
-        loss = s_vals_global_path[-1]/(V_target) # this value is the time that you would have if you travel exaclty on the centre line
+    # # evaluate mean solver time
+    # for i in range(len(solver_time_history)):
+    #     if solver_time_history[i] < solve_time_max:
+    #         solver_time_history[i] = 0
+    #     else:
+    #         solver_time_history[i] = overtime_penalty_coeff * (solver_time_history[i]/solve_time_max-1)**2
+    # solve_time_penalty = np.mean(solver_time_history)
+
+    # check if something went wrong by filtering for too small lap times
+    if t_loss * dt_controller_rate < 6 * max_laps: # this means that the lap time was too small to be credible
+        loss = s_vals_global_path[-1]/(V_target) * max_laps * 2 # this value is 1.5 * the time that you would have if you travel exaclty on the centre line
     else:
-        loss = t * dt_controller_rate + solve_time_penalty
+        loss = t_loss * dt_controller_rate + lane_bound_penalty # + solve_time_penalty
 
     
 
     end_time = time.time()
-    loop_time = end_time - start_time  # Calculate the elapsed time
+    #loop_time = end_time - start_time  # Calculate the elapsed time
     
-    print(f"Execution time: {loop_time:.6f} seconds")
-    print(f"solve_time_penalty: {solve_time_penalty:.6f} seconds")
+    #print(f"Trial time: {t_loss * dt_controller_rate:.6f} seconds")
+    print(f"lane_bound_penalty: {lane_bound_penalty:.6f}")
     print('')
     print('')
 
@@ -323,8 +340,8 @@ def objective(trial):
 study_name = "optuna_studies/optuna_study_results_" + MPC_algorithm
 storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
 
-study = optuna.create_study(study_name=study_name, direction="minimize", storage=storage_name, load_if_exists=False)
-study.optimize(objective, n_trials=2)
+study = optuna.create_study(study_name=study_name, direction="minimize", storage=storage_name, load_if_exists=True)
+study.optimize(objective, n_trials=10)
 
 print("Best hyperparameters:", study.best_params)
 

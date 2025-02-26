@@ -14,7 +14,7 @@ os.chdir(dname)
 
 
 # select algorithm to tune
-MPC_algorithm = 'MPCC_PP' # 'MPCC' - 'CAMPCC' - 'MPCC_PP'
+MPC_algorithm = 'MPCC' # 'MPCC' - 'CAMPCC' - 'MPCC_PP'
 
 
 rospy.init_node("optuna_node")  # Initialize the node
