@@ -406,120 +406,177 @@ class MPCC_controller_class(path_handeling_utilities_class):
         Ds_back = 0.0 # this is the length of the path that is behind the car
 
 
-        # ------ HIGH LEVEL SOLVER ------
-        pos_x_init_rot, pos_y_init_rot, yaw_init_rot,xyyaw_ref_path = self.relative_xyyaw_to_current_path(x_y_yaw_state,s) # current car state relative to current path index
-        n = self.high_level_solver_generator_obj.n_points_kernelized 
-        labels_x,labels_y,labels_heading,labels_k,local_path_length,labels_s = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forward,xyyaw_ref_path,n)
-        problem_high_level = self.set_up_high_level_solver(pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length,labels_x,labels_y,labels_heading,labels_k,labels_s)
-        
-        start_solve_time = time.time()
-        # call the high level solver
-        if self.solver_software == 'FORCES':
-            output_high_level, exitflag_high, info_high = self.high_level_solver.solve(problem_high_level)
-        
-        elif self.solver_software == 'ACADOS':
-            exitflag_high = self.high_level_solver.solve()
+        if self.single_layer == False:
+            # ------ HIGH LEVEL SOLVER ------
+            pos_x_init_rot, pos_y_init_rot, yaw_init_rot,xyyaw_ref_path = self.relative_xyyaw_to_current_path(x_y_yaw_state,s) # current car state relative to current path index
+            n = self.high_level_solver_generator_obj.n_points_kernelized 
+            labels_x,labels_y,labels_heading,labels_k,local_path_length,labels_s = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forward,xyyaw_ref_path,n)
+            problem_high_level = self.set_up_high_level_solver(pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length,labels_x,labels_y,labels_heading,labels_k,labels_s)
+            
+            start_solve_time = time.time()
+            # call the high level solver
+            if self.solver_software == 'FORCES':
+                output_high_level, exitflag_high, info_high = self.high_level_solver.solve(problem_high_level)
+            
+            elif self.solver_software == 'ACADOS':
+                exitflag_high = self.high_level_solver.solve()
 
-        # extract high level solution
-        if self.solver_software == 'FORCES':
-            output_array_high_level = np.array(list(output_high_level.values()))
+            # extract high level solution
+            if self.solver_software == 'FORCES':
+                output_array_high_level = np.array(list(output_high_level.values()))
 
-        elif self.solver_software == 'ACADOS':
-            output_array_high_level = np.zeros((self.high_level_solver_generator_obj.N+1, self.high_level_solver_generator_obj.nu + self.high_level_solver_generator_obj.nx))
-            for i in range(self.high_level_solver_generator_obj.N+1):
-                if i == self.high_level_solver.N:
-                    u_i_solution = np.zeros(self.high_level_solver_generator_obj.nu)
-                else:
-                    u_i_solution = self.high_level_solver.get(i, "u")
-                x_i_solution = self.high_level_solver.get(i, "x")
-                output_array_high_level[i] = np.concatenate((u_i_solution, x_i_solution))
-
-
-        end_solve_time = time.time()
-        solve_time = end_solve_time - start_solve_time
-        if solve_time > self.dt_controller_rate:
-            print(f'Solver time limit exceeded: {solve_time:.3f} seconds')
+            elif self.solver_software == 'ACADOS':
+                output_array_high_level = np.zeros((self.high_level_solver_generator_obj.N+1, self.high_level_solver_generator_obj.nu + self.high_level_solver_generator_obj.nx))
+                for i in range(self.high_level_solver_generator_obj.N+1):
+                    if i == self.high_level_solver.N:
+                        u_i_solution = np.zeros(self.high_level_solver_generator_obj.nu)
+                    else:
+                        u_i_solution = self.high_level_solver.get(i, "u")
+                    x_i_solution = self.high_level_solver.get(i, "x")
+                    output_array_high_level[i] = np.concatenate((u_i_solution, x_i_solution))
 
 
-        # check if solver converged
-        self.last_converged_high = self.check_solver_convergence(exitflag_high,self.last_converged_high,0) # last input is the choice between high and low level solver
-        
-        # --------------------------------
+            end_solve_time = time.time()
+            solve_time = end_solve_time - start_solve_time
+            if solve_time > self.dt_controller_rate:
+                print(f'Solver time limit exceeded: {solve_time:.3f} seconds')
 
-        # convert output array if MPCC_PP is used
-        if self.MPC_algorithm == 'MPCC_PP':
-            # reconstruct the path related quantities from the labels
-            #              u_yaw_rate slack s_dot   x y yaw s (MPCC_PP) u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s
-            # extract 
-            yaw_rate_high_level = output_array_high_level[:,0]
-            x_high_level = output_array_high_level[:,3]
-            y_high_level = output_array_high_level[:,4]
-            yaw_high_level = output_array_high_level[:,5]
-            # interpolate to get the path quantities
-            s_output_vec = output_array_high_level[:,6]
-            x_path = np.interp(s_output_vec/local_path_length, labels_s, labels_x)
-            y_path = np.interp(s_output_vec/local_path_length, labels_s, labels_y)
-            heading_path = np.interp(s_output_vec/local_path_length, labels_s, labels_heading)
 
-        elif self.MPC_algorithm == 'MPCC' or self.MPC_algorithm == 'CAMPCC':
-            #              u_yaw_rate slack   x y yaw s ref_x ref_y ref_heading  (MPCC and CAMPPC)
+            # check if solver converged
+            self.last_converged_high = self.check_solver_convergence(exitflag_high,self.last_converged_high,0) # last input is the choice between high and low level solver
+            
+            # --------------------------------
+
+            # convert output array if MPCC_PP is used
+            if self.MPC_algorithm == 'MPCC_PP':
+                # reconstruct the path related quantities from the labels
+                #              u_yaw_rate slack s_dot   x y yaw s (MPCC_PP) u_yaw_dot,slack,s_dot,pos_x,pos_y,yaw,s
+                # extract 
+                yaw_rate_high_level = output_array_high_level[:,0]
+                x_high_level = output_array_high_level[:,3]
+                y_high_level = output_array_high_level[:,4]
+                yaw_high_level = output_array_high_level[:,5]
+                # interpolate to get the path quantities
+                s_output_vec = output_array_high_level[:,6]
+                x_path = np.interp(s_output_vec/local_path_length, labels_s, labels_x)
+                y_path = np.interp(s_output_vec/local_path_length, labels_s, labels_y)
+                heading_path = np.interp(s_output_vec/local_path_length, labels_s, labels_heading)
+
+            elif self.MPC_algorithm == 'MPCC' or self.MPC_algorithm == 'CAMPCC':
+                #              u_yaw_rate slack   x y yaw s ref_x ref_y ref_heading  (MPCC and CAMPPC)
+                # extact 
+                yaw_rate_high_level = output_array_high_level[:,0]
+                x_high_level = output_array_high_level[:,2]
+                y_high_level = output_array_high_level[:,3]
+                yaw_high_level = output_array_high_level[:,4]
+                x_path = output_array_high_level[:,6]
+                y_path = output_array_high_level[:,7]
+                heading_path = output_array_high_level[:,8]
+
+
+            # ------ LOW LEVEL SOLVER ------
+            problem_low_level = self.set_up_low_level_solver_problem(x_high_level,
+                                                                    y_high_level,
+                                                                    yaw_high_level,
+                                                                    yaw_rate_high_level,
+                                                                    x_path,
+                                                                    y_path,
+                                                                    V_target,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega)
+
+            # call the low level solver
+            if self.solver_software == 'FORCES':
+                output_low_level, exitflag_low, info = self.low_level_solver.solve(problem_low_level)
+            elif self.solver_software == 'ACADOS':
+                exitflag_low = self.low_level_solver.solve() # solve the problem
+
+            # extract low level solution
+            if self.solver_software == 'FORCES':
+                output_array_low_level = np.array(list(output_low_level.values()))
+
+            elif self.solver_software == 'ACADOS':
+                # Retrieve the state trajectory
+                output_array_low_level = np.zeros((self.low_level_solver_generator_obj.N, self.low_level_solver_generator_obj.nu + self.low_level_solver_generator_obj.nx))
+                for i in range(self.low_level_solver_generator_obj.N):
+                    u_i_solution = self.low_level_solver.get(i, "u")
+                    x_i_solution = self.low_level_solver.get(i, "x")
+                    output_array_low_level[i] = np.concatenate((u_i_solution, x_i_solution))
+
+            # check if solver converged
+            self.last_converged_low = self.check_solver_convergence(exitflag_low,self.last_converged_low, 1) # last input is the choice between high and low level solver
+            
+
+            output_array_high_msg = Float32MultiArray()
+            output_array_high_msg.data = output_array_high_level.flatten().tolist()  # Convert NumPy array to list
+            self.mpc_high_level_solution_publisher.publish(output_array_high_msg)
+            
+            self.mpc_low_level_solution_publisher.publish(Float32MultiArray(data=output_array_low_level.flatten().tolist()))
+
+            # extract solution for plotting
+            x_low_level = output_array_low_level[:,3]
+            y_low_level = output_array_low_level[:,4]
+
+            # publish control inputs
+            self.publish_control_inputs(output_array_low_level)
+            # --------------------------------
+
+
+
+
+        else: # running single layer solver
+
+            # ------ SINGLE LAYER SOLVER ------
+            pos_x_init_rot, pos_y_init_rot, yaw_init_rot,xyyaw_ref_path = self.relative_xyyaw_to_current_path(x_y_yaw_state,s) # current car state relative to current path index
+            n = self.single_layer_solver_generator_obj.n_points_kernelized 
+            labels_x,labels_y,labels_heading,labels_k,local_path_length,labels_s = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forward,xyyaw_ref_path,n)
+            problem_single_layer = self.set_up_single_layer_solver_problem(pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega,
+                                           V_target, local_path_length,labels_k)
+            
+            start_solve_time = time.time()
+            # call the high level solver
+            if self.solver_software == 'FORCES':
+                output_single_layer, exitflag_single_layer, info_single_layer = self.single_layer_solver.solve(problem_single_layer)
+            
+            elif self.solver_software == 'ACADOS':
+                exitflag_single_layer = self.single_layer_solver.solve()
+
+            # extract high level solution
+            if self.solver_software == 'FORCES':
+                output_array_single_layer = np.array(list(output_single_layer.values()))
+
+            elif self.solver_software == 'ACADOS':
+                output_array_single_layer = np.zeros((self.single_layer_solver_generator_obj.N+1, self.single_layer_solver_generator_obj.nu + self.single_layer_solver_generator_obj.nx))
+                for i in range(self.single_layer_solver_generator_obj.N+1):
+                    if i == self.single_layer_solver.N:
+                        u_i_solution = np.zeros(self.single_layer_solver_generator_obj.nu)
+                    else:
+                        u_i_solution = self.single_layer_solver.get(i, "u")
+                    x_i_solution = self.single_layer_solver.get(i, "x")
+                    output_array_single_layer[i] = np.concatenate((u_i_solution, x_i_solution))
+
+
+            end_solve_time = time.time()
+            solve_time = end_solve_time - start_solve_time
+            if solve_time > self.dt_controller_rate:
+                print(f'Solver time limit exceeded: {solve_time:.3f} seconds')
+
+            # publish control inputs
+            self.publish_control_inputs(output_array_single_layer) # this works the same as the low level output because it's the first two values that get published
+
             # extact 
-            yaw_rate_high_level = output_array_high_level[:,0]
-            x_high_level = output_array_high_level[:,2]
-            y_high_level = output_array_high_level[:,3]
-            yaw_high_level = output_array_high_level[:,4]
-            x_path = output_array_high_level[:,6]
-            y_path = output_array_high_level[:,7]
-            heading_path = output_array_high_level[:,8]
+            # 0        1        2     3     4     5   6  7  8 9 10    11    12 
+            # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
+            # high level and lowlevel are the same for single layer so send the same values
+            x_high_level = output_array_single_layer[:,3]
+            y_high_level = output_array_single_layer[:,4]
+            x_low_level = output_array_single_layer[:,3]
+            y_low_level = output_array_single_layer[:,4]
+            x_path = output_array_single_layer[:,10]
+            y_path = output_array_single_layer[:,11]
+            heading_path = output_array_single_layer[:,12]
 
 
-        # ------ LOW LEVEL SOLVER ------
-        problem_low_level = self.set_up_low_level_solver_problem(x_high_level,
-                                                                 y_high_level,
-                                                                 yaw_high_level,
-                                                                 yaw_rate_high_level,
-                                                                 x_path,
-                                                                 y_path,
-                                                                 V_target,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega)
-
-        # call the low level solver
-        if self.solver_software == 'FORCES':
-            output_low_level, exitflag_low, info = self.low_level_solver.solve(problem_low_level)
-        elif self.solver_software == 'ACADOS':
-            exitflag_low = self.low_level_solver.solve() # solve the problem
-
-        # extract low level solution
-        if self.solver_software == 'FORCES':
-            output_array_low_level = np.array(list(output_low_level.values()))
-
-        elif self.solver_software == 'ACADOS':
-            # Retrieve the state trajectory
-            output_array_low_level = np.zeros((self.low_level_solver_generator_obj.N, self.low_level_solver_generator_obj.nu + self.low_level_solver_generator_obj.nx))
-            for i in range(self.low_level_solver_generator_obj.N):
-                u_i_solution = self.low_level_solver.get(i, "u")
-                x_i_solution = self.low_level_solver.get(i, "x")
-                output_array_low_level[i] = np.concatenate((u_i_solution, x_i_solution))
-
-        # check if solver converged
-        self.last_converged_low = self.check_solver_convergence(exitflag_low,self.last_converged_low, 1) # last input is the choice between high and low level solver
-        
-
-        output_array_high_msg = Float32MultiArray()
-        output_array_high_msg.data = output_array_high_level.flatten().tolist()  # Convert NumPy array to list
-        self.mpc_high_level_solution_publisher.publish(output_array_high_msg)
-        
-        self.mpc_low_level_solution_publisher.publish(Float32MultiArray(data=output_array_low_level.flatten().tolist()))
-
-        # extract solution for plotting
-        x_low_level = output_array_low_level[:,3]
-        y_low_level = output_array_low_level[:,4]
 
 
-        # --------------------------------
-
-
-        # publish control inputs
-        self.publish_control_inputs(output_array_low_level)
 
 
 
@@ -842,6 +899,46 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         return problem
     
+
+    def set_up_single_layer_solver_problem(self,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega,
+                                           V_target, local_path_length,labels_k):
+        # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
+        xinit = np.zeros(self.single_layer_solver_generator_obj.nx) # all zeros
+        xinit[0] = pos_x_init_rot
+        xinit[1] = pos_y_init_rot
+        xinit[2] = yaw_init_rot
+        xinit[3] = vx 
+        xinit[4] = vy
+        xinit[5] = omega
+        # the other states should be zero
+
+        # stack parameters for all time steps
+        params_i = np.array([V_target, local_path_length, self.q_con, self.q_u, self.q_acc, self.qt_pos, self.qt_rot, self.lane_width, self.qt_s_high, *labels_k])
+        
+        param_array = np.zeros((self.single_layer_solver_generator_obj.N+1, self.single_layer_solver_generator_obj.n_parameters))
+        for i in range(self.single_layer_solver_generator_obj.N+1):
+            param_array[i,:] = params_i
+
+        # for now skipping the initial guess because SQP will not use it anyway
+        # assign the value to the solver
+        if self.solver_software == 'FORCES':
+            # - set up initial guess and parameters
+            all_params_array_forces = param_array.ravel()
+            # , "reinitialize": False
+            problem_single_layer = {"xinit": xinit, "all_parameters": all_params_array_forces, "reinitialize": False} 
+        else: # ACADOS
+
+            # assign initial state
+            self.single_layer_solver.set(0, "lbx", xinit)
+            self.single_layer_solver.set(0, "ubx", xinit)
+
+            # assign parameters
+            for i in range(self.single_layer_solver_generator_obj.N+1):
+                self.single_layer_solver.set(i, "p", params_i)
+
+            problem_single_layer = [] # dummy value if using acados
+        return problem_single_layer
+
 
     
     def check_solver_convergence(self,exitflag,solver_converged_previous,hig_low_tag):
