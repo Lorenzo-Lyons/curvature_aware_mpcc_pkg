@@ -23,7 +23,10 @@ import rospkg
 from acados_template import AcadosOcpSolver
 
 from tf.transformations import euler_from_quaternion
-from MPC_generate_solvers.functions_for_solver_generation import generate_high_level_path_planner_ocp, generate_low_level_solver_ocp, generate_high_level_MPCC_PP
+from MPC_generate_solvers.functions_for_solver_generation import    generate_high_level_path_planner_ocp,\
+                                                                    generate_low_level_solver_ocp,\
+                                                                    generate_high_level_MPCC_PP,\
+                                                                    generate_single_layer_CAMPCC
 
 
 # TODO
@@ -82,6 +85,7 @@ class MPC_GUI_manager:
             self.vehicles_list[i].lane_width = config['lane_width']
             self.vehicles_list[i].minimal_plotting = config['minimal_plotting']
             self.vehicles_list[i].delay_compensation = config['delay_compensation']
+            self.vehicles_list[i].single_layer = config['single_layer']
             self.vehicles_list[i].solver_software = config['Solver_software']
             # solver choices
 
@@ -93,7 +97,8 @@ class MPC_GUI_manager:
             # set up solver type
             self.vehicles_list[i].set_solver_type(self.vehicles_list[i].solver_software,
                                                   self.vehicles_list[i].MPC_algorithm,
-                                                  self.vehicles_list[i].dynamic_model) 
+                                                  self.vehicles_list[i].dynamic_model,
+                                                  self.vehicles_list[i].single_layer) 
             
             # check if lane width has changed
             if lane_width_old != self.vehicles_list[i].lane_width:
@@ -257,8 +262,10 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.last_converged_low = True
 
 
+
         # define selected solver
-        self.set_solver_type(self.solver_software, self.MPC_algorithm, self.dynamic_model)
+        self.single_layer = False
+        self.set_solver_type(self.solver_software, self.MPC_algorithm, self.dynamic_model,self.single_layer)
 
         #set up constant problem parameters 
         self.initialize_constant_parameters() # only run this once to initialize, then config will overwrite them
@@ -274,7 +281,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         # set up utility parameters
         self.minimal_plotting = False
-        self.save_data = False
+        
         self.solver_converged = True
 
         #for data time stamp initialize sensor data
@@ -566,74 +573,98 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.GUI_param_names_publisher.publish(msg_GUI)
 
 
-    def set_solver_type(self,solver_software, MPC_algorithm, dynamic_model):
+    def set_solver_type(self,solver_software, MPC_algorithm, dynamic_model,single_layer):
         print('setting solver type')
+        if single_layer==False:
+            # --- load high level solver for reference generation ---
+            if MPC_algorithm == 'MPCC' or MPC_algorithm == 'CAMPCC':
+                self.high_level_solver_generator_obj = generate_high_level_path_planner_ocp(MPC_algorithm)
+            elif MPC_algorithm == 'MPCC_PP':
+                self.high_level_solver_generator_obj = generate_high_level_MPCC_PP()
 
-        # --- load high level solver for reference generation ---
-        if MPC_algorithm == 'MPCC' or MPC_algorithm == 'CAMPCC':
-            self.high_level_solver_generator_obj = generate_high_level_path_planner_ocp(MPC_algorithm)
-        elif MPC_algorithm == 'MPCC_PP':
-            self.high_level_solver_generator_obj = generate_high_level_MPCC_PP()
+
+            if solver_software == 'ACADOS':
+                high_level_solver_path = os.path.join(self.solvers_folder_path,
+                                                        self.high_level_solver_generator_obj.solver_name_acados,
+                                                        self.high_level_solver_generator_obj.solver_name_acados + '.json')
+                # check if the file exists
+                if os.path.isfile(high_level_solver_path) == False:
+                    print('')
+                    print('Warning! The HIGH LEVEL solver location is invalid')
+                    print('')
+                else:
+                    self.high_level_ocp = self.high_level_solver_generator_obj.produce_ocp()
+                    self.high_level_solver = AcadosOcpSolver(self.high_level_ocp, json_file=high_level_solver_path, build=False, generate=False)
+                    print('________________________________________________________________________________________')
+                    print('Successfully loaded high level solver: ' + self.high_level_solver_generator_obj.solver_name_acados)
+
+            elif solver_software == 'FORCES':
+                import forcespro.nlp
+
+                # check if folder exists
+                high_level_solver_path = os.path.join(self.solvers_folder_path,self.high_level_solver_generator_obj.solver_name_forces)
+                if os.path.isdir(high_level_solver_path) == False:
+                    print('')
+                    print('Warning! The HIGH LEVEL solver location is invalid')
+                    print('')
+                else:
+                    self.high_level_solver = forcespro.nlp.Solver.from_directory(high_level_solver_path)
+                    print('________________________________________________________________________________________')
+                    print('Successfully loaded high level solver: ' + self.high_level_solver_generator_obj.solver_name_forces)
 
 
-        if solver_software == 'ACADOS':
-            high_level_solver_path = os.path.join(self.solvers_folder_path,
-                                                    self.high_level_solver_generator_obj.solver_name_acados,
-                                                    self.high_level_solver_generator_obj.solver_name_acados + '.json')
-            # check if the file exists
-            if os.path.isfile(high_level_solver_path) == False:
-                print('')
-                print('Warning! The HIGH LEVEL solver location is invalid')
-                print('')
+
+            # --- load low level solver for control generation---
+            self.low_level_solver_generator_obj = generate_low_level_solver_ocp(dynamic_model)
+            if solver_software == 'ACADOS':
+                low_level_solver_path = os.path.join(self.solvers_folder_path,
+                                                        self.low_level_solver_generator_obj.solver_name_acados,
+                                                        self.low_level_solver_generator_obj.solver_name_acados + '.json')
+                
+                if os.path.isfile(low_level_solver_path) == False:
+                    print('')
+                    print('Warning! The LOW LEVEL solver location is invalid')
+                    print('')
+                else:
+                    self.low_level_ocp = self.low_level_solver_generator_obj.produce_ocp()
+                    self.low_level_solver = AcadosOcpSolver(self.low_level_ocp, json_file=low_level_solver_path, build=False, generate=False)
+                    print('Successfully loaded low level solver: ' + self.low_level_solver_generator_obj.solver_name_acados)
+
+            elif solver_software == 'FORCES':
+                # check if folder exists
+                low_level_solver_path = os.path.join(self.solvers_folder_path,self.low_level_solver_generator_obj.solver_name_forces)
+                if os.path.isdir(low_level_solver_path) == False:
+                    print('')
+                    print('Warning! The LOW LEVEL solver location is invalid')
+                    print('')
+                else:
+                    self.low_level_solver = forcespro.nlp.Solver.from_directory(low_level_solver_path)
+                    print('Successfully loaded low level solver: ' + self.low_level_solver_generator_obj.solver_name_forces)
+        
+        
+        
+        else: #load single track solver
+            if MPC_algorithm == 'CAMPCC':
+                self.single_layer_solver_generator_obj = generate_single_layer_CAMPCC(dynamic_model)
             else:
-                self.high_level_ocp = self.high_level_solver_generator_obj.produce_ocp()
-                self.high_level_solver = AcadosOcpSolver(self.high_level_ocp, json_file=high_level_solver_path, build=False, generate=False)
-                print('________________________________________________________________________________________')
-                print('Successfully loaded high level solver: ' + self.high_level_solver_generator_obj.solver_name_acados)
-
-        elif solver_software == 'FORCES':
-            import forcespro.nlp
-
-            # check if folder exists
-            high_level_solver_path = os.path.join(self.solvers_folder_path,self.high_level_solver_generator_obj.solver_name_forces)
-            if os.path.isdir(high_level_solver_path) == False:
-                print('')
-                print('Warning! The HIGH LEVEL solver location is invalid')
-                print('')
-            else:
-                self.high_level_solver = forcespro.nlp.Solver.from_directory(high_level_solver_path)
-                print('________________________________________________________________________________________')
-                print('Successfully loaded high level solver: ' + self.high_level_solver_generator_obj.solver_name_forces)
-
-
-
-        # --- load low level solver for control generation---
-        self.low_level_solver_generator_obj = generate_low_level_solver_ocp(dynamic_model)
-        if solver_software == 'ACADOS':
-            low_level_solver_path = os.path.join(self.solvers_folder_path,
-                                                    self.low_level_solver_generator_obj.solver_name_acados,
-                                                    self.low_level_solver_generator_obj.solver_name_acados + '.json')
+                print('Single layer only works with CAMPCC, not updating solver type')
             
-            if os.path.isfile(low_level_solver_path) == False:
-                print('')
-                print('Warning! The LOW LEVEL solver location is invalid')
-                print('')
-            else:
-                self.low_level_ocp = self.low_level_solver_generator_obj.produce_ocp()
-                self.low_level_solver = AcadosOcpSolver(self.low_level_ocp, json_file=low_level_solver_path, build=False, generate=False)
-                print('Successfully loaded low level solver: ' + self.low_level_solver_generator_obj.solver_name_acados)
+            if solver_software == 'ACADOS':
+                single_layer_solver_path = os.path.join(self.solvers_folder_path,
+                                                        self.single_layer_solver_generator_obj.solver_name_acados,
+                                                        self.single_layer_solver_generator_obj.solver_name_acados + '.json')
+                self.single_layer_ocp = self.single_layer_solver_generator_obj.produce_ocp()
+                self.single_layer_solver = AcadosOcpSolver(self.single_layer_ocp, json_file=single_layer_solver_path, build=False, generate=False)
+                print('________________________________________________________________________________________')
+                print('Successfully loaded single layer solver: ' + self.single_layer_solver_generator_obj.solver_name_acados)
 
-        elif solver_software == 'FORCES':
-            # check if folder exists
-            low_level_solver_path = os.path.join(self.solvers_folder_path,self.low_level_solver_generator_obj.solver_name_forces)
-            if os.path.isdir(low_level_solver_path) == False:
-                print('')
-                print('Warning! The LOW LEVEL solver location is invalid')
-                print('')
-            else:
-                self.low_level_solver = forcespro.nlp.Solver.from_directory(low_level_solver_path)
-                print('Successfully loaded low level solver: ' + self.low_level_solver_generator_obj.solver_name_forces)
-            
+            elif solver_software == 'FORCES':
+                import forcespro.nlp
+                single_layer_solver_path = os.path.join(self.solvers_folder_path,self.single_layer_solver_generator_obj.solver_name_forces)
+                self.single_layer_solver = forcespro.nlp.Solver.from_directory(single_layer_solver_path)
+                print('________________________________________________________________________________________')
+                print('Successfully loaded single layer solver: ' + self.single_layer_solver_generator_obj.solver_name_forces)
+
 
         
         
