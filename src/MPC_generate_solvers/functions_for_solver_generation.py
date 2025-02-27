@@ -1031,7 +1031,7 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         w = x[5]
 
         #return np.array([vx,0,w,th_input,0,st_input])
-        return np.array(self.dynamic_bicycle_continuous_dynamics(th_input,st_input,vx,vy,w,yaw))
+        return self.dynamic_bicycle_continuous_dynamics(th_input,st_input,vx,vy,w,yaw)
 
 
 
