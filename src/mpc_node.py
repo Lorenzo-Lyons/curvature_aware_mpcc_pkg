@@ -103,6 +103,9 @@ class MPC_GUI_manager:
             # check if lane width has changed
             if lane_width_old != self.vehicles_list[i].lane_width:
                 self.vehicles_list[i].produce_global_lane_boundaries_4_rviz()
+
+            # signal to the solvers that they need to be reinitialized cause the position may have changed since last time they were called
+            self.vehicles_list[i].reinitialize = True
             
 
 
@@ -260,6 +263,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         # set p contingency if solver does not converge
         self.last_converged_high = True
         self.last_converged_low = True
+        self.reinitialize = True # set to true in the beginning so that solvers will be started with the initial guess
 
 
 
@@ -529,7 +533,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
             n = self.single_layer_solver_generator_obj.n_points_kernelized 
             labels_x,labels_y,labels_heading,labels_k,local_path_length,labels_s = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forward,xyyaw_ref_path,n)
             problem_single_layer = self.set_up_single_layer_solver_problem(pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega,
-                                           V_target, local_path_length,labels_k)
+                                           V_target, local_path_length,labels_k,labels_s)
             
             start_solve_time = time.time()
             # call the high level solver
@@ -901,7 +905,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
     
 
     def set_up_single_layer_solver_problem(self,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega,
-                                           V_target, local_path_length,labels_k):
+                                           V_target, local_path_length,labels_k,labels_s):
         # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
         xinit = np.zeros(self.single_layer_solver_generator_obj.nx) # all zeros
         xinit[0] = pos_x_init_rot
@@ -919,13 +923,18 @@ class MPCC_controller_class(path_handeling_utilities_class):
         for i in range(self.single_layer_solver_generator_obj.N+1):
             param_array[i,:] = params_i
 
-        # for now skipping the initial guess because SQP will not use it anyway
+        # X0
+        X0_array_single_layer = self.single_layer_solver_generator_obj.produce_X0(V_target,local_path_length,labels_k,labels_s)   
+
         # assign the value to the solver
         if self.solver_software == 'FORCES':
             # - set up initial guess and parameters
+            x0_array_forces = X0_array_single_layer.ravel()
             all_params_array_forces = param_array.ravel()
             # , "reinitialize": False
-            problem_single_layer = {"xinit": xinit, "all_parameters": all_params_array_forces, "reinitialize": False} 
+            problem_single_layer = {"x0":x0_array_forces,"xinit": xinit, "all_parameters": all_params_array_forces, "reinitialize": self.reinitialize}
+            self.reinitialize = False # set to false after first call
+        
         else: # ACADOS
 
             # assign initial state
@@ -935,6 +944,14 @@ class MPCC_controller_class(path_handeling_utilities_class):
             # assign parameters
             for i in range(self.single_layer_solver_generator_obj.N+1):
                 self.single_layer_solver.set(i, "p", params_i)
+
+            # assign frist guess
+            for i in range(self.single_layer_solver_generator_obj.N):
+                self.single_layer_solver.set(i, "u", X0_array_single_layer[i,:self.single_layer_solver_generator_obj.nu])
+                self.single_layer_solver.set(i, "x", X0_array_single_layer[i, self.single_layer_solver_generator_obj.nu:])
+            self.single_layer_solver.set(self.single_layer_solver_generator_obj.N, "x", X0_array_single_layer[self.single_layer_solver_generator_obj.N, self.single_layer_solver_generator_obj.nu:])
+            
+
 
             problem_single_layer = [] # dummy value if using acados
         return problem_single_layer

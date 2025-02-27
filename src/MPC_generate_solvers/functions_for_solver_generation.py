@@ -1440,11 +1440,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
 
 
-    def produce_X0(self,V_target,local_path_length,labels_k,labels_s,labels_x,labels_y,labels_heading):
+    def produce_X0(self,V_target,local_path_length,labels_k,labels_s):
         # Initial guess for state trajectory
         X0_array = np.zeros((self.N+1,self.nu +  self.nx))
-        # z = yaw_dot slack pos_x, pos_y, yaw, s, ref_x, ref_y, ref_heading
-        #     0       1     2      3       4   5  6      7      8
+        # 0        1        2     3     4     5   6  7  8 9 10    11    12 
+        # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
 
         # assign initial guess for the states by forward euler integration on th ereference path
 
@@ -1462,35 +1462,51 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         y_ref_0 = np.zeros(N_0+1)
         ref_heading_0 = np.zeros(N_0+1)
         dt = self.time_horizon / N_0
-        u_yaw_rate_0 = np.zeros(N_0+1)
+        yaw_rate_0 = np.zeros(N_0+1)
         for i in range(1,N_0+1):
             x_ref_0[i] = x_ref_0[i-1] + V_target * dt * np.cos(ref_heading_0[i-1])
             y_ref_0[i] = y_ref_0[i-1] + V_target * dt * np.sin(ref_heading_0[i-1])
             ref_heading_0[i] = ref_heading_0[i-1] + k_0_vals[i-1] * V_target * dt
 
-            u_yaw_rate_0[i-1] = (ref_heading_0[i] - ref_heading_0[i-1] )/ dt
+            yaw_rate_0[i-1] = (ref_heading_0[i] - ref_heading_0[i-1] )/ dt
+
+        # get throttle value
+        throttle_search_vec = np.linspace(0,1,30)
+        # evalaute FX on the throttle search vec
+        Fx_wheels = + self.motor_force(throttle_search_vec,V_target,self.a_m_self,self.b_m_self,self.c_m_self)\
+                + self.rolling_friction(V_target,self.a_f_self,self.b_f_self,self.c_f_self,self.d_f_self)
+        acc_x =  Fx_wheels / self.m_self # evaluate to acceleration
+        #find the throttle that gives the closest acceleration to 0
+        throttle_0 = throttle_search_vec[np.argmin(np.abs(acc_x))]
+
 
         # now down sample to the N points
         s_0_vec = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), s_0_vec)
         x_ref_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), x_ref_0)
         y_ref_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), y_ref_0)
         ref_heading_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), ref_heading_0)
-        u_yaw_rate_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), u_yaw_rate_0)
+        yaw_rate_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), yaw_rate_0)
 
 
         # assign values to the array
-        # z = yaw_dot slack pos_x, pos_y, yaw, s, ref_x, ref_y, ref_heading
-        #     0       1     2      3       4   5  6      7      8
+        # 0        1        2     3     4     5   6  7  8 9 10    11    12 
+        # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
 
-        X0_array[:,0] = u_yaw_rate_0
-        X0_array[:,1] = np.zeros(self.N+1) # slack variable should be zero
-        X0_array[:,2] = x_ref_0 # s_dot can be around V_target
-        X0_array[:,3] = y_ref_0
-        X0_array[:,4] = ref_heading_0
-        X0_array[:,5] = s_0_vec
-        X0_array[:,6] = x_ref_0
-        X0_array[:,7] = y_ref_0
-        X0_array[:,8] = ref_heading_0
+        X0_array[:,0] = throttle_0
+        X0_array[:,1] = 0 # steering is 0 for now
+        X0_array[:,2] = 0 # slack variable should be zero
+        
+        X0_array[:,3] = x_ref_0 
+        X0_array[:,4] = y_ref_0
+        X0_array[:,5] = ref_heading_0
+        X0_array[:,6] = V_target
+        X0_array[:,7] = 0
+        X0_array[:,8] = yaw_rate_0
+        X0_array[:,9] = s_0_vec
+        X0_array[:,10] = x_ref_0
+        X0_array[:,11] = y_ref_0
+        X0_array[:,12] = ref_heading_0
+
 
 
         return X0_array
