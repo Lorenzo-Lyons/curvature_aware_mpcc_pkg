@@ -4,7 +4,7 @@ from functions_for_solver_generation import generate_single_layer_CAMPCC
 from acados_template import AcadosOcpSolver
 
 # select the solver to build MPCC or CAMPCC
-dynamic_model = 'kinematic_bicycle' # 'kinematic_bicycle', 'dynamic_bicycle'
+dynamic_model = 'dynamic_bicycle' # 'kinematic_bicycle', 'dynamic_bicycle'
 
 # instantiate the class
 solver_maker_obj = generate_single_layer_CAMPCC(dynamic_model)

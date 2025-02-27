@@ -9,7 +9,7 @@ import time
 from std_msgs.msg import String
 
 
-from std_msgs.msg import Float32, Float32MultiArray
+from std_msgs.msg import Float32, Float32MultiArray, Bool
 from geometry_msgs.msg import Point, PoseWithCovarianceStamped
 from visualization_msgs.msg import MarkerArray, Marker
 from datetime import datetime
@@ -258,12 +258,12 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         # delay compensation if in the lab
         self.delay_compensation = True
-        self.delay = 0.04 # communication delay in seconds (in the lab)
-
+        self.delay = 0.03 # communication delay in seconds (in the lab) 0.04
         # set p contingency if solver does not converge
         self.last_converged_high = True
         self.last_converged_low = True
-        self.reinitialize = True # set to true in the beginning so that solvers will be started with the initial guess
+        self.last_converged_single_layer = True
+        self.reinitialize = True # set to true in the beginning so that solvers will be started with the initial guess (now only for single layer)
 
 
 
@@ -330,6 +330,8 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.w_publisher = rospy.Publisher('w_mpc_' + str(car_number), Float32, queue_size=1)
         self.s_publisher = rospy.Publisher('s_' + str(car_number), Float32, queue_size=1)
         self.distance_from_centerline_publisher = rospy.Publisher('distance_from_centerline_' + str(car_number), Float32, queue_size=1)
+        self.solver_converged_publisher = rospy.Publisher('solver_converged_' + str(car_number), Bool, queue_size=1)
+
 
         # publish mpc solution as an array
         self.mpc_high_level_solution_publisher = rospy.Publisher('mpc_high_level_solution_' + str(car_number), Float32MultiArray, queue_size=1)
@@ -533,7 +535,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
             n = self.single_layer_solver_generator_obj.n_points_kernelized 
             labels_x,labels_y,labels_heading,labels_k,local_path_length,labels_s = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forward,xyyaw_ref_path,n)
             problem_single_layer = self.set_up_single_layer_solver_problem(pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega,
-                                           V_target, local_path_length,labels_k,labels_s)
+                                           V_target, self.q_v,local_path_length,labels_k,labels_s)
             
             start_solve_time = time.time()
             # call the high level solver
@@ -557,6 +559,8 @@ class MPCC_controller_class(path_handeling_utilities_class):
                     x_i_solution = self.single_layer_solver.get(i, "x")
                     output_array_single_layer[i] = np.concatenate((u_i_solution, x_i_solution))
 
+            # check if solver converged
+            self.last_converged_single_layer = self.check_solver_convergence(exitflag_single_layer,self.last_converged_single_layer, 2) # last input is the choice between high and low level solver
 
             end_solve_time = time.time()
             solve_time = end_solve_time - start_solve_time
@@ -905,7 +909,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
     
 
     def set_up_single_layer_solver_problem(self,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega,
-                                           V_target, local_path_length,labels_k,labels_s):
+                                           V_target, q_v,local_path_length,labels_k,labels_s):
         # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
         xinit = np.zeros(self.single_layer_solver_generator_obj.nx) # all zeros
         xinit[0] = pos_x_init_rot
@@ -917,7 +921,8 @@ class MPCC_controller_class(path_handeling_utilities_class):
         # the other states should be zero
 
         # stack parameters for all time steps
-        params_i = np.array([V_target, local_path_length, self.q_con, self.q_u, self.q_acc, self.qt_pos, self.qt_rot, self.lane_width, self.qt_s_high, *labels_k])
+                            #V_target, local_path_length,       q_con,      q_u,     q_acc,     qt_pos,      qt_rot,    lane_width,        qt_s_high,  q_v, labels_k
+        params_i = np.array([V_target, local_path_length, self.q_con, self.q_u, self.q_acc, self.qt_pos, self.qt_rot, self.lane_width, self.qt_s_high, q_v,*labels_k])
         
         param_array = np.zeros((self.single_layer_solver_generator_obj.N+1, self.single_layer_solver_generator_obj.n_parameters))
         for i in range(self.single_layer_solver_generator_obj.N+1):
@@ -932,8 +937,11 @@ class MPCC_controller_class(path_handeling_utilities_class):
             x0_array_forces = X0_array_single_layer.ravel()
             all_params_array_forces = param_array.ravel()
             # , "reinitialize": False
+            #self.reinitialize == True
+            if self.reinitialize == True:
+                print('resetting warm start first guess')
             problem_single_layer = {"x0":x0_array_forces,"xinit": xinit, "all_parameters": all_params_array_forces, "reinitialize": self.reinitialize}
-            self.reinitialize = False # set to false after first call
+            #self.reinitialize = False # set to false after first call
         
         else: # ACADOS
 
@@ -958,11 +966,13 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
 
     
-    def check_solver_convergence(self,exitflag,solver_converged_previous,hig_low_tag):
-        if hig_low_tag == 0:
+    def check_solver_convergence(self,exitflag,solver_converged_previous,hig_low_single_tag):
+        if hig_low_single_tag == 0:
             solver_level = 'HIGH level'
-        elif hig_low_tag == 1:
+        elif hig_low_single_tag == 1:
             solver_level = 'LOW level'
+        elif hig_low_single_tag == 2:
+            solver_level = 'SINGLE level'
 
         # define the different exit flags for the different solvers
         if self.solver_software == 'FORCES':
@@ -994,6 +1004,17 @@ class MPCC_controller_class(path_handeling_utilities_class):
             print(solver_level, self.solver_software + f" solver failed with exitflag/status {exitflag}")
             if maxit_reached == True:
                 print('Max iterations reached')
+
+        # as a recovery measure re-initialize the solver from the standard first guess
+        if hig_low_single_tag == 2:
+            if exitflag != all_good_number:
+                self.reinitialize = True # reset if the solver did not converge
+            else:
+                self.reinitialize = False
+
+        # publish if the solver converged or not
+        if hig_low_single_tag == 0 or hig_low_single_tag == 2: #only for high and single layer
+            self.solver_converged_publisher.publish(solver_converged)
 
         return solver_converged
 
@@ -1376,11 +1397,11 @@ if __name__ == '__main__':
                 # run 1 loop on all vehicles
                 for i in range(len(vehicle_controllers_list)):
                     # check if vehicle is stationary
-                    vehicle_controllers_list[i].run_one_MPCC_control_loop(vehicle_controllers_list[i].x_y_yaw_state,
-                                                                        vehicle_controllers_list[i].vx,
-                                                                        vehicle_controllers_list[i].vy,
-                                                                        vehicle_controllers_list[i].omega,
-                                                                        vehicle_controllers_list[i].V_target)
+                    vehicle_controllers_list[i].run_one_MPCC_control_loop(  vehicle_controllers_list[i].x_y_yaw_state,
+                                                                            vehicle_controllers_list[i].vx,
+                                                                            vehicle_controllers_list[i].vy,
+                                                                            vehicle_controllers_list[i].omega,
+                                                                            vehicle_controllers_list[i].V_target)
 
                 stop_clock_time = rospy.get_rostime()
                 elapsed_time_global_loop = (stop_clock_time - start_clock_time).to_sec()
