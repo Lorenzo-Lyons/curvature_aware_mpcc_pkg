@@ -840,7 +840,7 @@ def generate_path_data(track_choice, n_checkpoints):
     k_4_local_path = np.concatenate((Checkpoints_k[:-1],Checkpoints_k, Checkpoints_k[1:]))
 
 
-    window = 5
+    window = 10 # 5
     k_4_local_path =  sliding_window_smooth(k_4_local_path, window)
     k_4_local_path =  sliding_window_smooth(k_4_local_path, window)
 

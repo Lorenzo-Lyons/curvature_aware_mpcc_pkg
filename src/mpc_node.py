@@ -921,8 +921,8 @@ class MPCC_controller_class(path_handeling_utilities_class):
         # the other states should be zero
 
         # stack parameters for all time steps
-                            #V_target, local_path_length,       q_con,      q_u,     q_acc,     qt_pos,      qt_rot,    lane_width,        qt_s_high,  q_v, labels_k
-        params_i = np.array([V_target, local_path_length, self.q_con, self.q_u, self.q_acc, self.qt_pos, self.qt_rot, self.lane_width, self.qt_s_high, q_v,*labels_k])
+                            #local_path_length,       q_con,      q_u,     q_acc,     qt_pos,      qt_rot,    lane_width,        qt_s_high,  q_v, labels_k
+        params_i = np.array([local_path_length, self.q_con, self.q_u, self.q_acc, self.qt_pos, self.qt_rot, self.lane_width, self.qt_s_high, q_v,*labels_k])
         
         param_array = np.zeros((self.single_layer_solver_generator_obj.N+1, self.single_layer_solver_generator_obj.n_parameters))
         for i in range(self.single_layer_solver_generator_obj.N+1):
@@ -940,6 +940,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
             #self.reinitialize == True
             if self.reinitialize == True:
                 print('resetting warm start first guess')
+                
             problem_single_layer = {"x0":x0_array_forces,"xinit": xinit, "all_parameters": all_params_array_forces, "reinitialize": self.reinitialize}
             #self.reinitialize = False # set to false after first call
         
