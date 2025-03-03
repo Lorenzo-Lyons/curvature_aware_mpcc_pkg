@@ -1391,8 +1391,8 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
             + q_u * st_input ** 2\
             + q_acc * acc_x ** 2\
             + 1000 * slack**2\
-            - q_v * th_input**2\
-            #+ q_u * th_input ** 2\
+            - q_v * vx**2\
+            + q_u * th_input ** 2\
 
         return j
     
@@ -1408,7 +1408,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # higher penalty costs on v and path tracking, plus an dditional penalty for not alligning with the path at the end
         err_pos_squared_t = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
         j_term_pos =    qt_pos * err_pos_squared_t + \
-                        qt_rot * misalignment #- qt_s_high * (s/(self.time_horizon*4)) ** 2
+                        qt_rot * misalignment - qt_s_high * (s/(self.time_horizon*4)) ** 2
         
         return j_term_pos
     
