@@ -1164,7 +1164,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         self.n_inequality_constraints = 2
 
         # set operational limits on the centrifugal force
-        self.max_centrifugal_force = 6.5 # m/s^2
+        self.max_centrifugal_force = 100 #6.5 # m/s^2
         # upper / lower bound on the control inputs
                         #  th_input,st_input,slack,
         self.u_l = np.array([0.0,-1, 0])
@@ -1174,6 +1174,19 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         self.x_l = np.array([-1000,-1000,-1000,-100,    -100,  -100,0,-1000,-1000,-1000])
         self.x_u = np.array([ 1000, 1000,1000,  100,     100,   100,1000,1000,1000,1000])
         
+
+
+        # evalaute curvature of the path as a function of s
+        try:
+            from path_track_definitions import generate_fixed_path_quantities
+        except:
+            from .path_track_definitions import generate_fixed_path_quantities
+
+        self.path_lengthscale = 1.3/self.n_points_kernelized
+        lambda_val = 0.0001**2
+        self.Kxx_inv, self.normalized_s_4_kernel_path = generate_fixed_path_quantities(self.path_lengthscale,
+                                                                            lambda_val,
+                                                                            self.n_points_kernelized)
     
     def produce_ocp(self):
         from casadi import vertcat, MX
@@ -1211,7 +1224,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         ocp.cost.cost_type_e = 'EXTERNAL'
 
         # --- set up the cost functions ---
-        ocp.model.cost_expr_ext_cost  =  self.objective(th_input,st_input,slack,pos_x,pos_y,ref_x,ref_y,q_con,q_u,vx,q_acc,q_v,s) 
+        ocp.model.cost_expr_ext_cost  =  self.objective(th_input,st_input,slack,pos_x,pos_y,ref_x,ref_y,q_con,q_u,vx,q_acc,q_v,s,local_path_length,labels_k,yaw,ref_heading) 
         ocp.model.cost_expr_ext_cost_e =  self.objective_terminal_cost(ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot,s,qt_s_high)
                 
         # constraints
@@ -1228,8 +1241,8 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
         # define lane boundary constraints
         ocp.model.con_h_expr = vertcat(self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width), self.max_centrifugal_force_constraint(vx,w,slack,st_input))  # Define h(x, u)
-        ocp.constraints.lh = np.array([0.0,0.0])  # Lower bound (h_min)
-        ocp.constraints.uh = np.array([1000,1000])  # Upper bound (h_max)
+        ocp.constraints.lh = np.array([0.0, 0.0])  # Lower bound (h_min)
+        ocp.constraints.uh = np.array([1000,+ self.max_centrifugal_force])  # Upper bound (h_max)
 
         # Initial state constraint
         ocp.constraints.x0 = np.zeros(self.nx)  # This is a default value, it will be updated at runtime
@@ -1292,7 +1305,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # Define solver options
         codeoptions = forcespro.CodeOptions('FORCESNLPsolver') #get standard options
         # continuous dynamics options
-        codeoptions.nlp.integrator.type = 'ERK4'
+        codeoptions.nlp.integrator.type = 'ForwardEuler' #'ERK4'
         codeoptions.nlp.integrator.Ts = self.time_horizon / (self.N+1)
         codeoptions.nlp.integrator.nodes = 5 # intermediate nodes for the integrator
 
@@ -1304,11 +1317,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         codeoptions.nlp.stack_parambounds = True  # determines if the parameters can simply be stacked (but not sure exactly what it does)
 
 
-        # set tolerances
-        codeoptions.nlp.TolStat = 1e-3  # inf norm tol. on stationarity
-        codeoptions.nlp.TolEq = 1e-3  # tol. on equality constraints
-        codeoptions.nlp.TolIneq = 1e-3  # tol. on inequality constraints
-        codeoptions.nlp.TolComp = 1e-3  # tol. on complementarity
+        # # set tolerances
+        # codeoptions.nlp.TolStat = 1e-5  # inf norm tol. on stationarity
+        # codeoptions.nlp.TolEq = 1e-5  # tol. on equality constraints
+        # codeoptions.nlp.TolIneq = 1e-5  # tol. on inequality constraints
+        # codeoptions.nlp.TolComp = 1e-5  # tol. on complementarity
 
         # set warm start behaviour for dual variables (so always warm start from solver perspective, even if in practice you give it a vector of zeros)
         codeoptions.init = 2  # 0 cold, 1 centered, 2 warm
@@ -1320,13 +1333,13 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # NOTE that by default the solver uses a single sqp iteration so you need to increase the number of iterations
         #codeoptions.nlp.hessian_approximation = 'gauss-newton'
         #codeoptions.solver_timeout = 1  # Set a 40 ms time limit we assume the controller rate is 20Hz but you need some time to do other things in the control loop
-        codeoptions.solver_exit_external = 1
-        codeoptions.sqp_nlp.maxqps = 4
-        codeoptions.sqp_nlp.maxSQPit = 10
-        codeoptions.sqp_nlp.reg_hessian = 1e-6  # regularization of hessian (default is 5 * 10^(-9))
+        #codeoptions.solver_exit_external = 1
+        codeoptions.sqp_nlp.maxqps = 3
+        codeoptions.sqp_nlp.maxSQPit = 3
+        #codeoptions.sqp_nlp.reg_hessian = 1e-6  # regularization of hessian (default is 5 * 10^(-9))
         #codeoptions.sqp_nlp.use_line_search = False  # Enable line search (default)
 
-        codeoptions.parallel = 1 # this doesn't really do much
+        #codeoptions.parallel = 1 # this doesn't really do much
 
 
         return model,codeoptions
@@ -1362,7 +1375,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         return local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k
     
 
-    def objective(self,th_input,st_input,slack,pos_x,pos_y,ref_x,ref_y,q_con,q_u,vx,q_acc,q_v,s):
+    def objective(self,th_input,st_input,slack,pos_x,pos_y,ref_x,ref_y,q_con,q_u,vx,q_acc,q_v,s,local_path_length,labels_k,yaw,ref_heading):
 
         # from kinemaitc bicycle model
         Fx_wheels = self.motor_force(th_input,vx,self.a_m_self,self.b_m_self,self.c_m_self)\
@@ -1375,18 +1388,18 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         
 
         j = j_path\
-            + q_u * th_input ** 2\
             + q_u * st_input ** 2\
             + q_acc * acc_x ** 2\
             + 1000 * slack**2\
-            + q_v * (vx-2)**2\
+            - q_v * th_input**2\
+            #+ q_u * th_input ** 2\
 
         return j
     
     def objective_forces(self, z, p):
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
-        return self.objective(th_input,st_input,slack,pos_x,pos_y,ref_x,ref_y,q_con,q_u,vx,q_acc,q_v,s)
+        return self.objective(th_input,st_input,slack,pos_x,pos_y,ref_x,ref_y,q_con,q_u,vx,q_acc,q_v,s,local_path_length,labels_k,yaw,ref_heading)
 
     def objective_terminal_cost(self, ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot,s,qt_s_high):
         # terminal cost
@@ -1395,8 +1408,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # higher penalty costs on v and path tracking, plus an dditional penalty for not alligning with the path at the end
         err_pos_squared_t = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
         j_term_pos =    qt_pos * err_pos_squared_t + \
-                        qt_rot * misalignment 
-                        #- qt_s_high * (s/(self.time_horizon*4)) ** 2
+                        qt_rot * misalignment #- qt_s_high * (s/(self.time_horizon*4)) ** 2
         
         return j_term_pos
     
@@ -1416,10 +1428,6 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
             cos = np.cos
             sin = np.sin
         
-        try:
-            from path_track_definitions import generate_fixed_path_quantities
-        except:
-            from .path_track_definitions import generate_fixed_path_quantities
         # --- vehicle dynamics constraint ---
         if self.dynamic_model == "kinematic_bicycle":
             x_dot, y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.kinematic_bicycle_continuous_dynamics(th_input,st_input,vx,yaw)
@@ -1428,17 +1436,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         else:
             print('Dynamic_constraint: Invalid dynamic model setting')
 
-        # evalaute curvature of the path as a function of s
-        path_lengthscale = 1.3/self.n_points_kernelized
-        lambda_val = 0.0001**2
-        Kxx_inv, normalized_s_4_kernel_path = generate_fixed_path_quantities(path_lengthscale,
-                                                                            lambda_val,
-                                                                            self.n_points_kernelized)
         s_star = s / local_path_length # normalize s
 
-        K_x_star = K_matern2_kernel(s_star, normalized_s_4_kernel_path,
-                                path_lengthscale,1,self.n_points_kernelized)      
-        left_side = K_x_star @ Kxx_inv
+        K_x_star = K_matern2_kernel(s_star, self.normalized_s_4_kernel_path,
+                                self.path_lengthscale,1,self.n_points_kernelized)      
+        left_side = K_x_star @ self.Kxx_inv
         k = left_side @ labels_k
 
         # s_dot definition depending on the selected algorithm
@@ -1447,7 +1449,6 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         p = (pos_x - ref_x) * sin(ref_heading)  + (pos_y - ref_y) * -cos(ref_heading)
         den_corrected = self.soft_min(1+p*k,0.3)
         projection_ratio = 1 / den_corrected
-        #projection_ratio = 1 / (1+p*k)
         s_dot = v_tan * projection_ratio
 
         # forwards integrate the reference path
@@ -1479,16 +1480,18 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         if self.dynamic_model == "kinematic_bicycle":
             steering_angle = self.steering_2_steering_angle(st_input,self.a_s_self,self.b_s_self,self.c_s_self,self.d_s_self,self.e_s_self)
             w_kin = vx * np.tan(steering_angle) / (self.lf_self+self.lr_self)
-            h = - (vx * w_kin)**2 + (self.max_centrifugal_force + slack)**2
+            h = (vx * w_kin - slack)**2 #+ (self.max_centrifugal_force + slack)**2
         elif self.dynamic_model == "dynamic_bicycle":
-            h =  - (vx * w)**2 + (self.max_centrifugal_force + slack)**2
+            h =  (vx * w - slack)**2 #+ (self.max_centrifugal_force + slack)**2
         return h
 
     def non_lin_constraint_forces(self,z, p):
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
-        return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width),self.max_centrifugal_force_constraint(vx,w,slack,st_input)]
-
+        # return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width),
+        #         self.max_centrifugal_force_constraint(vx,w,slack,st_input)]
+        return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width),
+               1]
 
 
 
