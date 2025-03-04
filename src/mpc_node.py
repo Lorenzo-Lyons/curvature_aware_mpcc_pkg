@@ -569,7 +569,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
             # publish control inputs
             self.publish_control_inputs(output_array_single_layer) # this works the same as the low level output because it's the first two values that get published
-
+            print('th open loop:',output_array_single_layer[:,0])
             # extact 
             # 0        1        2     3     4     5   6  7  8 9 10    11    12 
             # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
@@ -639,7 +639,21 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
 
     def set_solver_type(self,solver_software, MPC_algorithm, dynamic_model,single_layer):
+        # delete all previous solvers
         print('setting solver type')
+        # try:
+        #     del self.single_layer_solver
+        # except:
+        #     pass
+        # try:
+        #     del self.high_level_solver
+        # except:
+        #     pass
+        # try:
+        #     del self.low_level_solver
+        # except:
+        #     pass
+
         if single_layer==False:
             # --- load high level solver for reference generation ---
             if MPC_algorithm == 'MPCC' or MPC_algorithm == 'CAMPCC':
@@ -940,8 +954,11 @@ class MPCC_controller_class(path_handeling_utilities_class):
             #self.reinitialize == True
             if self.reinitialize == True:
                 print('resetting warm start first guess')
+                self.set_solver_type(self.solver_software,self.MPC_algorithm,self.dynamic_model,self.single_layer)
                 
-            problem_single_layer = {"x0":x0_array_forces,"xinit": xinit, "all_parameters": all_params_array_forces, "reinitialize": self.reinitialize}
+
+                
+            problem_single_layer = {"x0":x0_array_forces,"xinit": xinit, "all_parameters": all_params_array_forces,"reinitialize": self.reinitialize} #  
             #self.reinitialize = False # set to false after first call
         
         else: # ACADOS

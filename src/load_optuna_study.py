@@ -4,6 +4,7 @@ import optuna
 assign_to_GUI = True
 
 ROS_study = True
+single_layer = True
 MPC_algorithm = 'CAMPCC' # 'MPCC' - 'CAMPCC' - 'MPCC_PP'
 
 

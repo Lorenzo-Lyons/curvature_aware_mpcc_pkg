@@ -1162,17 +1162,16 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         self.nu = 3 # throttle, stteering, slack
         self.n_parameters = 9 + self.n_points_kernelized
         self.n_inequality_constraints = 3 # non linear inequality constraints
-        self.lin_ineq = 2 # linear inequality constraints
 
         # set operational limits on the centrifugal force
         self.max_centrifugal_force = 30 #6.5 # m/s^2
         # upper / lower bound on the control inputs
                         #  th_input,st_input,slack,
-        self.u_l = np.array([0.0,-1, 0])
-        self.u_u = np.array([+1,+1, 100])
+        self.u_l = np.array([0.01,-1, 0])
+        self.u_u = np.array([0.5,+1, 100])
         # upper- lower bound on the states
                             # pos_x ,pos_y, yaw, vx,    vy,  w,  s,    ref_x,ref_y,ref_heading
-        self.x_l = np.array([-1000,-1000,-1000,-100,    -100,  -100,0,-1000,-1000,-1000])
+        self.x_l = np.array([-1000,-1000,-1000,-100,    -100,  -100,-100,-1000,-1000,-1000])
         self.x_u = np.array([ 1000, 1000,1000,  100,     100,   100,1000,1000,1000,1000])
         
 
@@ -1304,9 +1303,9 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # Define solver options
         codeoptions = forcespro.CodeOptions('FORCESNLPsolver') #get standard options
         # continuous dynamics options
-        codeoptions.nlp.integrator.type = 'ForwardEuler' # 'ForwardEuler' #'ERK4'
+        codeoptions.nlp.integrator.type = 'ERK2' # 'ForwardEuler' #
         codeoptions.nlp.integrator.Ts = self.time_horizon / (self.N+1)
-        codeoptions.nlp.integrator.nodes = 10 # intermediate nodes for the integrator
+        codeoptions.nlp.integrator.nodes = 5 # intermediate nodes for the integrator
 
         codeoptions.name = self.solver_name_forces
         codeoptions.printlevel = 0  #  1: summary line after each solve,   0: no prit
@@ -1328,13 +1327,13 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         #set overwrite behviour
         codeoptions.overwrite = 1 # 0 never, 1 always, 2 (Defaul) ask
 
-        codeoptions.solvemethod = 'SQP_NLP' # 'PDIP_NLP' # changing to non linear primal dual method  'SQP_NLP'
+        codeoptions.solvemethod = 'SQP_NLP' # 'SQP_NLP' # 'PDIP_NLP' # changing to non linear primal dual method  'SQP_NLP'
         # NOTE that by default the solver uses a single sqp iteration so you need to increase the number of iterations
         #codeoptions.nlp.hessian_approximation = 'gauss-newton'
         #codeoptions.solver_timeout = 1  # Set a 40 ms time limit we assume the controller rate is 20Hz but you need some time to do other things in the control loop
         #codeoptions.solver_exit_external = 1
-        codeoptions.sqp_nlp.maxqps = 3
-        codeoptions.sqp_nlp.maxSQPit = 3
+        codeoptions.sqp_nlp.maxqps = 2
+        codeoptions.sqp_nlp.maxSQPit = 5
         #codeoptions.sqp_nlp.reg_hessian = 1e-6  # regularization of hessian (default is 5 * 10^(-9))
         #codeoptions.sqp_nlp.use_line_search = False  # Enable line search (default)
 
@@ -1379,18 +1378,18 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # from kinemaitc bicycle model
         Fx_wheels = self.motor_force(th_input,vx,self.a_m_self,self.b_m_self,self.c_m_self)\
                     + self.rolling_friction(vx,self.a_f_self,self.b_f_self,self.c_f_self,self.d_f_self)
-        acc_x =  Fx_wheels / self.m_self 
-        q_acc * acc_x ** 2
+        acc_x =  Fx_wheels / self.m_self # evaluate to acceleration
 
         err_lat_squared = (pos_x - ref_x)**2 + (pos_y - ref_y)**2            
         j_path = q_con * err_lat_squared
 
         j = j_path\
             + q_u * st_input ** 2\
+            + q_u * th_input ** 2\
             + q_acc * acc_x ** 2\
             + 100 * slack**2\
-            - q_v * vx**2\
-            + q_u * th_input ** 2
+            + q_v * (vx-4)**2\
+            
             
             
 
@@ -1492,6 +1491,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         h2 = vx*slope + w_constr + w0 + slack
         return [h1,h2]
 
+
     def non_lin_constraint_forces(self,z, p):
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
@@ -1553,20 +1553,20 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # 0        1        2     3     4     5   6  7  8 9 10    11    12 
         # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
 
-        X0_array[:,0] = 0.5
-        X0_array[:,1] = 0 # steering is 0 for now
-        X0_array[:,2] = 0 # slack variable should be zero
+        X0_array[:,0] = 0.45
+        # X0_array[:,1] = 0 # steering is 0 for now
+        # X0_array[:,2] = 0 # slack variable should be zero
         
-        X0_array[:,3] = x_ref_0 
-        X0_array[:,4] = y_ref_0
-        X0_array[:,5] = ref_heading_0
+        # X0_array[:,3] = x_ref_0 
+        # X0_array[:,4] = y_ref_0
+        # X0_array[:,5] = ref_heading_0
         X0_array[:,6] = V_target
-        X0_array[:,7] = 0
-        X0_array[:,8] = yaw_rate_0
-        X0_array[:,9] = s_0_vec
-        X0_array[:,10] = x_ref_0
-        X0_array[:,11] = y_ref_0
-        X0_array[:,12] = ref_heading_0
+        # X0_array[:,7] = 0
+        # X0_array[:,8] = yaw_rate_0
+        # X0_array[:,9] = s_0_vec
+        # X0_array[:,10] = x_ref_0
+        # X0_array[:,11] = y_ref_0
+        # X0_array[:,12] = ref_heading_0
 
 
 
