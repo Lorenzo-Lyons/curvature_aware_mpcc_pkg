@@ -1161,10 +1161,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         self.nx = 10 # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
         self.nu = 3 # throttle, stteering, slack
         self.n_parameters = 9 + self.n_points_kernelized
-        self.n_inequality_constraints = 2
+        self.n_inequality_constraints = 3 # non linear inequality constraints
+        self.lin_ineq = 2 # linear inequality constraints
 
         # set operational limits on the centrifugal force
-        self.max_centrifugal_force = 100 #6.5 # m/s^2
+        self.max_centrifugal_force = 30 #6.5 # m/s^2
         # upper / lower bound on the control inputs
                         #  th_input,st_input,slack,
         self.u_l = np.array([0.0,-1, 0])
@@ -1242,7 +1243,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # define lane boundary constraints
         ocp.model.con_h_expr = vertcat(self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width), self.max_centrifugal_force_constraint(vx,w,slack,st_input))  # Define h(x, u)
         ocp.constraints.lh = np.array([0.0, 0.0])  # Lower bound (h_min)
-        ocp.constraints.uh = np.array([1000,+ self.max_centrifugal_force])  # Upper bound (h_max)
+        ocp.constraints.uh = np.array([1000, self.max_centrifugal_force**2])  # Upper bound (h_max)
 
         # Initial state constraint
         ocp.constraints.x0 = np.zeros(self.nx)  # This is a default value, it will be updated at runtime
@@ -1297,17 +1298,15 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # Set non linear constraints
         model.nh = self.n_inequality_constraints
         model.ineq = self.non_lin_constraint_forces
-        model.hl = np.array([0.0,  0.0])
-        model.hu = np.array([1000.0, 1000.0])  # upper bound on inequality constraints
+        model.hl = np.array([0.0,0.0,0.0])
+        model.hu = np.array([1000.0,1000.0,1000.0])  # upper bound on inequality constraints
         
-
-
         # Define solver options
         codeoptions = forcespro.CodeOptions('FORCESNLPsolver') #get standard options
         # continuous dynamics options
-        codeoptions.nlp.integrator.type = 'ForwardEuler' #'ERK4'
+        codeoptions.nlp.integrator.type = 'ForwardEuler' # 'ForwardEuler' #'ERK4'
         codeoptions.nlp.integrator.Ts = self.time_horizon / (self.N+1)
-        codeoptions.nlp.integrator.nodes = 5 # intermediate nodes for the integrator
+        codeoptions.nlp.integrator.nodes = 10 # intermediate nodes for the integrator
 
         codeoptions.name = self.solver_name_forces
         codeoptions.printlevel = 0  #  1: summary line after each solve,   0: no prit
@@ -1385,14 +1384,15 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
         err_lat_squared = (pos_x - ref_x)**2 + (pos_y - ref_y)**2            
         j_path = q_con * err_lat_squared
-        
 
         j = j_path\
             + q_u * st_input ** 2\
             + q_acc * acc_x ** 2\
-            + 1000 * slack**2\
+            + 100 * slack**2\
             - q_v * vx**2\
-            + q_u * th_input ** 2\
+            + q_u * th_input ** 2
+            
+            
 
         return j
     
@@ -1479,19 +1479,23 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
     def max_centrifugal_force_constraint(self,vx,w,slack,st_input):
         if self.dynamic_model == "kinematic_bicycle":
             steering_angle = self.steering_2_steering_angle(st_input,self.a_s_self,self.b_s_self,self.c_s_self,self.d_s_self,self.e_s_self)
-            w_kin = vx * np.tan(steering_angle) / (self.lf_self+self.lr_self)
-            h = (vx * w_kin - slack)**2 #+ (self.max_centrifugal_force + slack)**2
+            w_constr = vx * np.tan(steering_angle) / (self.lf_self+self.lr_self)
         elif self.dynamic_model == "dynamic_bicycle":
-            h =  (vx * w - slack)**2 #+ (self.max_centrifugal_force + slack)**2
-        return h
+            w_constr = w
+        # evaluate linear contraint on the maximum centrifugal force
+        # vx = 4.6 --> w = 0 (max vx)
+        # vx = 2.5 --> w = -3.8 (observed point when car lifts wheels off the ground)
+        slope = 3.8 / (2.5 - 4.6)
+        w0 = - slope * 4.6 
+
+        h1 = vx*slope - w_constr + w0 + slack
+        h2 = vx*slope + w_constr + w0 + slack
+        return [h1,h2]
 
     def non_lin_constraint_forces(self,z, p):
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
-        # return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width),
-        #         self.max_centrifugal_force_constraint(vx,w,slack,st_input)]
-        return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width),
-               1]
+        return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width),*self.max_centrifugal_force_constraint(vx,w,slack,st_input)]
 
 
 

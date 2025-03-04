@@ -8,7 +8,7 @@ build_acados=False
 build_FORCES=True
 
 # select the solver to build MPCC or CAMPCC
-dynamic_models = ['kinematic_bicycle'] # 'kinematic_bicycle', 'dynamic_bicycle'
+dynamic_models = ['kinematic_bicycle','dynamic_bicycle'] # 'kinematic_bicycle', 'dynamic_bicycle'
 
 
 
