@@ -568,8 +568,12 @@ class MPCC_controller_class(path_handeling_utilities_class):
                 print(f'Solver time limit exceeded: {solve_time:.3f} seconds')
 
             # publish control inputs
+             
             self.publish_control_inputs(output_array_single_layer) # this works the same as the low level output because it's the first two values that get published
-            print('th open loop:',output_array_single_layer[:,0])
+            np.set_printoptions(precision=2, suppress=True)  # Set precision for NumPy
+            print('')
+            print('th open loop:', output_array_single_layer[:, 0])
+
             # extact 
             # 0        1        2     3     4     5   6  7  8 9 10    11    12 
             # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
