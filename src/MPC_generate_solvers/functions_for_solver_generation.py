@@ -1156,7 +1156,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         self.solver_name_forces = 'single_layer_forces_CAMPCC_' + dynamic_model
 
         self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
-        self.time_horizon = 1.5
+        self.time_horizon = 1.5 * 0.5
         self.N = 30 # stages
         self.nx = 10 # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
         self.nu = 3 # throttle, stteering, slack
@@ -1164,11 +1164,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         self.n_inequality_constraints = 3 # non linear inequality constraints
 
         # set operational limits on the centrifugal force
-        self.max_centrifugal_force = 30 #6.5 # m/s^2
+        #self.max_centrifugal_force = 30 #6.5 # m/s^2
         # upper / lower bound on the control inputs
                         #  th_input,st_input,slack,
         self.u_l = np.array([0.0,-1, 0])
-        self.u_u = np.array([0.5,+1, 100])
+        self.u_u = np.array([1.0,+1, 100])
         # upper- lower bound on the states
                             # pos_x ,pos_y, yaw, vx,    vy,  w,  s,    ref_x,ref_y,ref_heading
         #self.x_l = np.array([-1000,-1000,-1000,-100,    -100,  -100,-100,-1000,-1000,-1000])
@@ -1243,8 +1243,8 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
         # define lane boundary constraints
         ocp.model.con_h_expr = vertcat(self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width), self.max_centrifugal_force_constraint(vx,w,slack,st_input))  # Define h(x, u)
-        ocp.constraints.lh = np.array([0.0, 0.0])  # Lower bound (h_min)
-        ocp.constraints.uh = np.array([1000, 1000])  # Upper bound (h_max)
+        ocp.constraints.lh = np.zeros(2)#np.array([0.0, 0.0])  # Lower bound (h_min)
+        ocp.constraints.uh = np.infty*np.ones(2)  # Upper bound (h_max)
 
         # Initial state constraint
         ocp.constraints.x0 = np.zeros(self.nx)  # This is a default value, it will be updated at runtime
@@ -1292,20 +1292,24 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         for i in range(self.N):
             model.objective[i] = self.objective_forces  # eval_obj is a Python function
         model.objective[self.N] = self.objective_terminal_forces
-  
+        
+        #model.LSobjective = self.objective_LS_forces  # Assign the LSobjective function
+    
+
+
         # Set dynamic constraint
         model.continuous_dynamics = self.single_layer_planner_continous_dynamics_forces
         
         # Set non linear constraints
         model.nh = self.n_inequality_constraints
         model.ineq = self.non_lin_constraint_forces
-        model.hl = np.array([0.0,0.0,0.0])
-        model.hu = np.array([1000.0,1000.0,1000.0])  # upper bound on inequality constraints
+        model.hl = np.zeros(3)#np.array([0.0,0.0,0.0])
+        model.hu = np.ones(3)*np.infty#np.array([1000.0,1000.0,1000.0])  # upper bound on inequality constraints
         
         # Define solver options
         codeoptions = forcespro.CodeOptions('FORCESNLPsolver') #get standard options
         # continuous dynamics options
-        codeoptions.nlp.integrator.type = 'ForwardEuler' #'ERK4' #'IRK2' # 'ForwardEuler' #
+        codeoptions.nlp.integrator.type = 'ForwardEuler' #'ERK4' #'ForwardEuler' #'ERK4' #'IRK2' # 'ForwardEuler' #
         codeoptions.nlp.integrator.Ts = self.time_horizon / (self.N+1)
         codeoptions.nlp.integrator.nodes = 5 # intermediate nodes for the integrator
 
@@ -1318,13 +1322,13 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
 
         # # set tolerances
-        # codeoptions.nlp.TolStat = 1e-5  # inf norm tol. on stationarity
-        # codeoptions.nlp.TolEq = 1e-5  # tol. on equality constraints
-        # codeoptions.nlp.TolIneq = 1e-5  # tol. on inequality constraints
-        # codeoptions.nlp.TolComp = 1e-5  # tol. on complementarity
+        # codeoptions.nlp.TolStat = 1e-3  # inf norm tol. on stationarity
+        # codeoptions.nlp.TolEq = 1e-3  # tol. on equality constraints
+        # codeoptions.nlp.TolIneq = 1e-3  # tol. on inequality constraints
+        # codeoptions.nlp.TolComp = 1e-3  # tol. on complementarity
 
         # set warm start behaviour for dual variables (so always warm start from solver perspective, even if in practice you give it a vector of zeros)
-        codeoptions.init = 2  # 0 cold, 1 centered, 2 warm
+        codeoptions.init = 0  # 0 cold, 1 centered, 2 warm
 
         #set overwrite behviour
         codeoptions.overwrite = 1 # 0 never, 1 always, 2 (Defaul) ask
@@ -1334,10 +1338,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         #codeoptions.nlp.hessian_approximation = 'gauss-newton'
         #codeoptions.solver_timeout = 1  # Set a 40 ms time limit we assume the controller rate is 20Hz but you need some time to do other things in the control loop
         #codeoptions.solver_exit_external = 1
-        codeoptions.sqp_nlp.maxqps = 2
-        codeoptions.sqp_nlp.maxSQPit = 5
-        codeoptions.sqp_nlp.reg_hessian = 1e-6  # regularization of hessian (default is 5 * 10^(-9))
+        codeoptions.sqp_nlp.maxqps = 5
+        codeoptions.sqp_nlp.maxSQPit = 10
+        codeoptions.sqp_nlp.reg_hessian = 1e-1  # regularization of hessian (default is 5 * 10^(-9))
         #codeoptions.sqp_nlp.use_line_search = False  # Enable line search (default)
+ 
 
         codeoptions.parallel = 1 # this doesn't really do much
 
@@ -1396,7 +1401,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # for now we assume vy is small
         v_tan = vx * cos(yaw - ref_heading)
         p = (pos_x - ref_x) * sin(ref_heading)  + (pos_y - ref_y) * -cos(ref_heading)
-        den_corrected = self.soft_min(1+p*k,0.3)
+        den_corrected = self.soft_min(1+p*k,0.1)
         projection_ratio = 1 / den_corrected
         s_dot = v_tan * projection_ratio
 
@@ -1411,10 +1416,10 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
         j = j_path\
             + q_u * st_input ** 2\
-            + q_u * th_input ** 2\
+            + q_u * (th_input-1)**2\
             + q_acc * acc_x ** 2\
             + 100 * slack**2\
-            + q_v * (s_dot-10)**2  # much better like this than - q_v * s_dot**2\
+            + q_v * (s_dot-15)**2  # much better like this than - q_v * s_dot**2\
             #+ q_v * (vx-4)**2\
             
             
@@ -1424,6 +1429,60 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
         return self.objective(th_input,st_input,slack,pos_x,pos_y,ref_x,ref_y,q_con,q_u,vx,q_acc,q_v,s,local_path_length,labels_k,yaw,ref_heading)
+
+
+    def objective_LS(self,th_input,st_input,slack,pos_x,pos_y,ref_x,ref_y,q_con,q_u,vx,q_acc,q_v,s,local_path_length,labels_k,yaw,ref_heading):
+        # Check if s is casadi or numpy
+        if isinstance(s, casadi.MX) or isinstance(s, casadi.SX):
+            cos = casadi.cos
+            sin = casadi.sin
+        else:
+            cos = np.cos
+            sin = np.sin
+
+
+        s_star = s / local_path_length # normalize s
+
+        K_x_star = K_matern2_kernel(s_star, self.normalized_s_4_kernel_path,
+                                self.path_lengthscale,1,self.n_points_kernelized)      
+        left_side = K_x_star @ self.Kxx_inv
+        k = left_side @ labels_k
+
+        # s_dot definition depending on the selected algorithm
+        # for now we assume vy is small
+        v_tan = vx * cos(yaw - ref_heading)
+        p = (pos_x - ref_x) * sin(ref_heading)  + (pos_y - ref_y) * -cos(ref_heading)
+        den_corrected = self.soft_min(1+p*k,0.1)
+        projection_ratio = 1 / den_corrected
+        s_dot = v_tan * projection_ratio
+
+
+        # from kinemaitc bicycle model
+        Fx_wheels = self.motor_force(th_input,vx,self.a_m_self,self.b_m_self,self.c_m_self)\
+                    + self.rolling_friction(vx,self.a_f_self,self.b_f_self,self.c_f_self,self.d_f_self)
+        acc_x =  Fx_wheels / self.m_self # evaluate to acceleration
+
+        err_lat_squared = (pos_x - ref_x)**2 + (pos_y - ref_y)**2            
+        #j_path = q_con * err_lat_squared
+
+        j1 = np.sqrt(q_con) * np.sqrt(err_lat_squared)
+        j2 = np.sqrt(q_u)  * st_input
+        j3 = np.sqrt(q_u)  * (th_input-1)
+        j4 = np.sqrt(q_acc)  * acc_x
+        j5 = np.sqrt(100)  * slack
+        j6 = np.sqrt(q_v)  * (s_dot-15)  # much better like this than - q_v * s_dot**2\
+            #+ q_v * (vx-4)**2\
+            
+            
+        return casadi.vertcat(j1,j2,j3,j4,j5,j6)
+
+    def objective_LS_forces(self,z,p):
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
+        local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
+        return self.objective_LS(th_input,st_input,slack,pos_x,pos_y,ref_x,ref_y,q_con,q_u,vx,q_acc,q_v,s,local_path_length,labels_k,yaw,ref_heading)
+
+
+
 
     def objective_terminal_cost(self, ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot,s,qt_s_high):
         # terminal cost
@@ -1512,11 +1571,12 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # vx = 4.6 --> w = 0 (max vx)
         # vx = 2.5 --> w = -3.8 (observed point when car lifts wheels off the ground)
         slope = 3.8 / (2.5 - 4.6)
-        w0 = - slope * 4.6 
+        w0 = - slope * 4.6
+        w0 = w0 * 0.5
 
         h1 = vx*slope - w_constr + w0 + slack
         h2 = vx*slope + w_constr + w0 + slack
-        return [h1,h2]
+        return [1,1]
 
 
     def non_lin_constraint_forces(self,z, p):

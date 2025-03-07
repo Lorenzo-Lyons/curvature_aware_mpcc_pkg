@@ -9,7 +9,7 @@ import time
 from std_msgs.msg import String
 
 
-from std_msgs.msg import Float32, Float32MultiArray, Bool
+from std_msgs.msg import Float32, Float32MultiArray, Bool,Float64MultiArray
 from geometry_msgs.msg import Point, PoseWithCovarianceStamped
 from visualization_msgs.msg import MarkerArray, Marker
 from datetime import datetime
@@ -258,7 +258,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         # delay compensation if in the lab
         self.delay_compensation = True
-        self.delay = 0.03 # communication delay in seconds (in the lab) 0.04
+        self.delay = 0.03 * 0.5 # communication delay in seconds (in the lab) 0.04
         # set p contingency if solver does not converge
         self.last_converged_high = True
         self.last_converged_low = True
@@ -345,6 +345,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.throttle_publisher = rospy.Publisher('throttle_' + str(car_number), Float32, queue_size=1)
         self.steering_publisher = rospy.Publisher('steering_' + str(car_number), Float32, queue_size=1)
         self.comptime_publisher = rospy.Publisher('comptime_' + str(car_number), Float32, queue_size=1)
+        self.mpc_inputs_timestamped_publisher = rospy.Publisher('mpc_inputs_timestamped_' + str(car_number), Float32MultiArray, queue_size=1)
 
         # set up publishers for internal mpc node states (selections from GUI)
         self.GUI_param_names_publisher = rospy.Publisher('GUI_param_names_' + str(car_number), String, queue_size=1)
@@ -568,11 +569,12 @@ class MPCC_controller_class(path_handeling_utilities_class):
                 print(f'Solver time limit exceeded: {solve_time:.3f} seconds')
 
             # publish control inputs
+            # print throttle with 2 decimals
+            #print('throttle:', np.round(output_array_single_layer[:,0],2))
              
             self.publish_control_inputs(output_array_single_layer) # this works the same as the low level output because it's the first two values that get published
             np.set_printoptions(precision=2, suppress=True)  # Set precision for NumPy
-            print('')
-            print('th open loop:', output_array_single_layer[:, 0])
+
 
             # extact 
             # 0        1        2     3     4     5   6  7  8 9 10    11    12 
@@ -940,7 +942,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         # stack parameters for all time steps
                             #local_path_length,       q_con,      q_u,     q_acc,     qt_pos,      qt_rot,    lane_width,        qt_s_high,  q_v, labels_k
-        params_i = np.array([local_path_length, self.q_con, self.q_u, self.q_acc, self.qt_pos, self.qt_rot, self.lane_width, self.qt_s_high, q_v,*labels_k])
+        params_i = np.array([local_path_length, self.q_con, self.q_u, self.q_acc, self.qt_pos_high, self.qt_rot_high, self.lane_width, self.qt_s_high, q_v,*labels_k])
         
         param_array = np.zeros((self.single_layer_solver_generator_obj.N+1, self.single_layer_solver_generator_obj.n_parameters))
         for i in range(self.single_layer_solver_generator_obj.N+1):
@@ -961,8 +963,10 @@ class MPCC_controller_class(path_handeling_utilities_class):
                 self.set_solver_type(self.solver_software,self.MPC_algorithm,self.dynamic_model,self.single_layer)
                 
 
-                
-            problem_single_layer = {"x0":x0_array_forces,"xinit": xinit, "all_parameters": all_params_array_forces,"reinitialize": self.reinitialize} #  
+            try:
+                problem_single_layer = {"x0":x0_array_forces,"xinit": xinit, "all_parameters": all_params_array_forces,"reinitialize": self.reinitialize} #  ,"reinitialize": self.reinitialize
+            except:
+                problem_single_layer = {"x0":x0_array_forces,"xinit": xinit, "all_parameters": all_params_array_forces} #  
             #self.reinitialize = False # set to false after first call
         
         else: # ACADOS
@@ -1056,6 +1060,11 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         self.throttle_publisher.publish(throttle_val)
         self.steering_publisher.publish(steering_val)
+
+        #this is needed for the data storage
+        # msg = Float32MultiArray()
+        # msg.data = [rospy.Time.now().to_sec(),throttle_val,steering_val]
+        # self.mpc_inputs_timestamped_publisher.publish(msg)
 
 
 
@@ -1347,6 +1356,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.vx = +vx_abs * np.cos(yaw) + vy_abs * np.sin(yaw)
         self.vy = -vx_abs * np.sin(yaw) + vy_abs * np.cos(yaw)
 
+
         # unwrap past angles to avoid jumps when flipping from - pi to + pi
         delta_yaw = self.past_yaw_vicon[-1] - self.past_yaw_vicon[0]
         if delta_yaw > np.pi:
@@ -1396,7 +1406,7 @@ if __name__ == '__main__':
         global_comptime_publisher = rospy.Publisher('GLOBAL_comptime', Float32, queue_size=1)
 
         # define controller rate
-        dt_controller_rate = 0.05
+        dt_controller_rate = 0.05 * 0.5
 
         #set up vehicle controllers
         #car 1

@@ -4,6 +4,7 @@ import optuna
 import matplotlib.pyplot as plt
 import time
 from std_msgs.msg import Float32
+from optuna_study_functions import set_up_GUI_optuna
 
 # change folder to where this script is located
 import os
@@ -13,15 +14,9 @@ os.chdir(dname)
 
 
 
-# select algorithm to tune
-MPC_algorithm = 'CAMPCC' #
 
-if MPC_algorithm == 'MPCC':
-    algorithm_number = 0
-elif MPC_algorithm == 'CAMPCC':
-    algorithm_number = 1
-elif MPC_algorithm == 'MPCC_PP':
-    algorithm_number = 2
+
+
 
 
 rospy.init_node("optuna_node")  # Initialize the node
@@ -34,6 +29,11 @@ GUI_mpc_node = Client("/mpc_node", timeout=5)
 
 max_laps = 3
 
+# select algorithm to tune
+MPC_algorithm = 'CAMPCC' #
+single_layer_tag = True
+set_up_GUI_optuna_obj = set_up_GUI_optuna(GUI_mpc_node,single_layer_tag,MPC_algorithm)
+
 
 # set dart simulator parameters
 GUI_client_simulator.update_configuration({"disturbance": True})
@@ -42,14 +42,14 @@ GUI_client_simulator.update_configuration({"dynamic_model_choice": 3})
 
 
 
-# set mpc node parameters
-lane_width = 0.6
-lane_violation_cost = 10
-GUI_mpc_node.update_configuration({"lane_width": lane_width})
-GUI_mpc_node.update_configuration({"Solver_software": 1})
-GUI_mpc_node.update_configuration({"MPC_algorithm": algorithm_number})
-GUI_mpc_node.update_configuration({"Dynamic_model": 1})   # dynamic bicycle model
-GUI_mpc_node.update_configuration({"V_target": 3.5})
+# # set mpc node parameters
+# lane_violation_cost = 10
+# lane_width = 0.6
+# GUI_mpc_node.update_configuration({"lane_width": lane_width})
+# GUI_mpc_node.update_configuration({"Solver_software": 1})
+# GUI_mpc_node.update_configuration({"MPC_algorithm": algorithm_number})
+# GUI_mpc_node.update_configuration({"Dynamic_model": 1})   # dynamic bicycle model
+# GUI_mpc_node.update_configuration({"V_target": 3.5})
 
 
 
@@ -62,21 +62,20 @@ def reset_initial_position(GUI_client_simulator):
     
 
 def set_mpc_node_GUI(trial,GUI_mpc_node):
-    GUI_mpc_node.update_configuration({"single_layer": True})
+    # GUI_mpc_node.update_configuration({"single_layer": True})
     # generate parameters for optuna study
-    q_con = trial.suggest_float("q_con", 0.001, 1, log=True)
-    q_u_yaw_rate = trial.suggest_float("q_u_yaw_rate", 0.001, 1, log=True) #0.03 #0.005 
+    # #local_path_length,       q_con,      q_u,     q_acc,     qt_pos_high,      qt_rot_high,    lane_width,        qt_s_high,  q_v, labels_k
+    q_con = trial.suggest_float("q_con", 0.001, 10, log=True)
     qt_pos_high = trial.suggest_float("qt_pos_high", 0.01, 100, log=True)
     qt_rot_high = trial.suggest_float("qt_rot_high", 0.01, 100, log=True)
-    qt_s_high = trial.suggest_float("qt_s_high", 0.01, 10, log=True)
-    q_v = trial.suggest_float("q_v", 0.001, 1, log=True)
+    qt_s_high = trial.suggest_float("qt_s_high", 0.01, 20, log=True)
+    q_v = trial.suggest_float("q_v", 0.001, 10, log=True)
     q_u = trial.suggest_float("q_u", 0.001, 1, log=True)
     q_acc = trial.suggest_float("q_acc", 0.001, 1, log=True)
 
 
     # set GUI parameters
     GUI_mpc_node.update_configuration({"q_con": q_con})
-    GUI_mpc_node.update_configuration({"q_u_yaw_rate": q_u_yaw_rate})
     GUI_mpc_node.update_configuration({"qt_pos_high": qt_pos_high})
     GUI_mpc_node.update_configuration({"qt_rot_high": qt_rot_high})
     GUI_mpc_node.update_configuration({"qt_s_high": qt_s_high})
@@ -147,14 +146,14 @@ def objective(trial):
         if started_timer:
             elapsed_time = time.time() - start_time
             distance_from_centerline_now = rospy.wait_for_message("/distance_from_centerline_1", Float32)
-            if distance_from_centerline_now.data > lane_width/2:
+            if distance_from_centerline_now.data > set_up_GUI_optuna_obj.lane_width/2:
                 
-                lane_bound_penalty += lane_violation_cost * (distance_from_centerline_now.data - lane_width/2)
+                lane_bound_penalty += set_up_GUI_optuna_obj.lane_violation_cost * (distance_from_centerline_now.data - set_up_GUI_optuna_obj.lane_width/2)
 
     # set safety to 0 immediately after the trial is completed
     pub_safety_value.publish(0.0)
 
-    if elapsed_time < 6 * max_laps or distance_from_centerline_now.data - lane_width/2 > lane_width/2: # something went wrong, like exited lane or some strange behavior
+    if elapsed_time < 6 * max_laps or distance_from_centerline_now.data - set_up_GUI_optuna_obj.lane_width/2 > set_up_GUI_optuna_obj.lane_width/2: # something went wrong, like exited lane or some strange behavior
         print('Trial aborted due to too short lap time or too large lane violation')
         elapsed_time = 35
 
@@ -170,7 +169,7 @@ def objective(trial):
 
 
 # save study
-study_name = "optuna_studies/optuna_results_SINGLE_layer_ROS_" + MPC_algorithm
+study_name = set_up_GUI_optuna_obj.study_name #"optuna_studies/optuna_results_SINGLE_layer_ROS_" + MPC_algorithm
 storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
 
 study = optuna.create_study(study_name=study_name, direction="minimize", storage=storage_name, load_if_exists=True)
