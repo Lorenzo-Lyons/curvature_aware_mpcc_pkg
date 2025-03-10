@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   dynamic_reconfigure
   roscpp
   rospy
+  message_generation
 )
 
 
@@ -24,12 +25,26 @@ generate_dynamic_reconfigure_options(
 ## catkin specific configuration ##
 ###################################
 
-catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES curvature_aware_mpcc_pkg
-#  CATKIN_DEPENDS other_catkin_pkg
-#  DEPENDS system_lib
+
+
+
+add_message_files(
+  FILES
+  ThreeTimeStampsFloat32.msg
 )
+
+generate_messages(
+    DEPENDENCIES
+    std_msgs
+)
+
+catkin_package(
+  CATKIN_DEPENDS message_runtime
+)
+  #  INCLUDE_DIRS include
+  #  LIBRARIES curvature_aware_mpcc_pkg
+  #  DEPENDS system_lib
+
 
 ###########
 ## Build ##

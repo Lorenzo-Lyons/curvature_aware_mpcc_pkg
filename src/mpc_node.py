@@ -12,6 +12,7 @@ from std_msgs.msg import String
 from std_msgs.msg import Float32, Float32MultiArray, Bool,Float64MultiArray
 from geometry_msgs.msg import Point, PoseWithCovarianceStamped
 from visualization_msgs.msg import MarkerArray, Marker
+from curvature_aware_mpcc_pkg.msg import ThreeTimeStampsFloat32 
 from datetime import datetime
 import csv
 # for dynamic paramters reconfigure (setting param values from rqt_reconfigure GUI)
@@ -345,7 +346,12 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.throttle_publisher = rospy.Publisher('throttle_' + str(car_number), Float32, queue_size=1)
         self.steering_publisher = rospy.Publisher('steering_' + str(car_number), Float32, queue_size=1)
         self.comptime_publisher = rospy.Publisher('comptime_' + str(car_number), Float32, queue_size=1)
-        self.mpc_inputs_timestamped_publisher = rospy.Publisher('mpc_inputs_timestamped_' + str(car_number), Float32MultiArray, queue_size=1)
+        self.mpc_throttle_publisher = rospy.Publisher('throttle_3timestamps_' + str(car_number), ThreeTimeStampsFloat32, queue_size=1)
+        self.mpc_steering_publisher = rospy.Publisher('steering_3timestamps_' + str(car_number), ThreeTimeStampsFloat32, queue_size=1)
+
+
+
+
 
         # set up publishers for internal mpc node states (selections from GUI)
         self.GUI_param_names_publisher = rospy.Publisher('GUI_param_names_' + str(car_number), String, queue_size=1)
@@ -1061,10 +1067,20 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.throttle_publisher.publish(throttle_val)
         self.steering_publisher.publish(steering_val)
 
-        #this is needed for the data storage
-        # msg = Float32MultiArray()
-        # msg.data = [rospy.Time.now().to_sec(),throttle_val,steering_val]
-        # self.mpc_inputs_timestamped_publisher.publish(msg)
+        # publishe timestamped versions of the inputs to get the time delay data
+        msg_mpc_th = ThreeTimeStampsFloat32()
+        msg_mpc_st = ThreeTimeStampsFloat32()
+        # add header 1 timestamp
+        time_now = rospy.Time.now()
+        msg_mpc_th.header1.stamp = time_now
+        msg_mpc_st.header1.stamp = time_now
+        #add the inputs
+        msg_mpc_th.data = throttle_val.data
+        msg_mpc_st.data = steering_val.data
+        # publish the messages
+        self.mpc_throttle_publisher.publish(msg_mpc_th)
+        self.mpc_steering_publisher.publish(msg_mpc_st)
+
 
 
 

@@ -6,5 +6,7 @@
    />
 <node pkg="rqt_reconfigure" type="rqt_reconfigure" name="rqt_reconfigure"
    />
+<node pkg="curvature_aware_mpcc_pkg" type="inputs_3timestamp_republishing.py" name="inputs_3timestamp_republishing" output="screen"
+   />
 
 </launch>
