@@ -1169,17 +1169,34 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
 class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end inherits from DART system identification
     # here we need the dynamic constraints of teh low level controller
 
-    def __init__(self,dynamic_model):
+    def __init__(self,dynamic_model,actuator_dynamics,path_2_actuator_dynamics):
         
         self.dynamic_model = dynamic_model
-        self.solver_name_acados = 'single_layer_acados_CAMPCC_' + dynamic_model 
-        self.solver_name_forces = 'single_layer_forces_CAMPCC_' + dynamic_model
+        actuator_dynamics = actuator_dynamics
+        self.solver_name_acados = 'single_layer_acados_CAMPCC' + dynamic_model + actuator_dynamics
+        self.solver_name_forces = 'single_layer_forces_CAMPCC' + dynamic_model + actuator_dynamics
 
         self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
         self.time_horizon = 1.5 * 0.5
         self.N = 30 # stages
         self.nx = 10 # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
         self.nu = 3 # throttle, stteering, slack
+
+
+        # if actuator dynamics are enabled we must add extra states
+        if actuator_dynamics == '_act_dyn':
+            # load the weights from the actuator dynamics saved parameters
+            self.load_actuator_dynamics(path_2_actuator_dynamics)
+            self.act_FIR_states = len(self.weights_th_FIR_solver) + len(self.weights_st_FIR_solver)
+            self.nx = self.nx + self.act_FIR_states
+            # no need to add the FRI since it will be baked into the dynamics
+
+            
+
+
+
+
+
         self.n_parameters = 9 + self.n_points_kernelized
         self.n_inequality_constraints = 3 # non linear inequality constraints
 
@@ -1210,6 +1227,43 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
                                                                             lambda_val,
                                                                             self.n_points_kernelized)
     
+    def load_actuator_dynamics(self,path_2_folder):
+        # load the actuator dynamics parameters
+        dt = np.load(path_2_folder + '/dt.npy').item()
+        n_past_actions = np.load(path_2_folder + '/n_past_actions.npy').item()
+        weights_th = np.load(path_2_folder + '/weights_throttle.npy')
+        weights_st = np.load(path_2_folder + '/weights_steering.npy')
+
+        self.dt_FIR = dt
+        self.n_past_actions_FRI = n_past_actions
+        self.weights_th_FIR = weights_th
+        self.weights_st_FIR = weights_st
+
+        # find the first value from the end of the weights that is larger than 10-6
+        n_past_actions_th = np.where(np.abs(weights_th) > 10**-6)[0][-1] + 2
+        n_past_actions_st = np.where(np.abs(weights_st) > 10**-6)[0][-1] + 2
+
+        
+        time_vec_th = np.arange(0,dt*n_past_actions_th,dt)
+        time_vec_st = np.arange(0,dt*n_past_actions_st,dt)
+        dt_solver = self.time_horizon / self.N
+        n_past_actions_th_solver = int(np.ceil(dt*n_past_actions_th/dt_solver)) 
+        n_past_actions_st_solver = int(np.ceil(dt*n_past_actions_st/dt_solver)) 
+
+        time_vec_th_solver = np.arange(0,dt_solver*n_past_actions_th_solver+dt_solver*0.5,dt_solver)
+        time_vec_st_solver = np.arange(0,dt_solver*n_past_actions_st_solver+dt_solver*0.5,dt_solver)
+
+        # now interpolate the weights to the solver time horizon
+        weights_th_solver = np.interp(time_vec_th_solver,time_vec_th,np.squeeze(weights_th[:n_past_actions_th]),right=0)
+        weights_st_solver = np.interp(time_vec_st_solver,time_vec_st,np.squeeze(weights_st[:n_past_actions_st]),right=0)
+
+        # assign to self
+        self.weights_th_FIR_solver = weights_th_solver
+        self.weights_st_FIR_solver = weights_st_solver
+
+
+
+
     def produce_ocp(self):
         from casadi import vertcat, MX
         from acados_template import  AcadosOcp, AcadosModel

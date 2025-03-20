@@ -8,18 +8,22 @@ build_acados=False
 build_FORCES=True
 
 # select the solver to build MPCC or CAMPCC
-dynamic_models = ['dynamic_bicycle'] # 'kinematic_bicycle', 'dynamic_bicycle'
+dynamic_models = ['_dynamic_bicycle'] # 'kinematic_bicycle', 'dynamic_bicycle'
+actuator_dynamics = '_act_dyn'
 
+# select where to load the actuator dynamics from
+current_script_path = os.path.realpath(__file__)
+current_script_dir = os.path.dirname(current_script_path)
 
+actuator_dynamics_folder = os.path.join(current_script_dir,'actuator_dynamics_saved_parameters')
 
 
 for dynamic_model in dynamic_models:
     # instantiate the class
-    solver_maker_obj = generate_single_layer_CAMPCC(dynamic_model)
+    solver_maker_obj = generate_single_layer_CAMPCC(dynamic_model, actuator_dynamics, actuator_dynamics_folder)
 
     # change current folder to be where the solvers need to be put
-    current_script_path = os.path.realpath(__file__)
-    current_script_dir = os.path.dirname(current_script_path)
+
     path_to_built_solvers = os.path.join(current_script_dir,'solvers')
     os.chdir(path_to_built_solvers)
 
