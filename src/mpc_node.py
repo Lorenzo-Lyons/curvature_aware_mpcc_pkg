@@ -93,13 +93,15 @@ class MPC_GUI_manager:
             # this is because of how the slecetion works
             self.vehicles_list[i].solver_software = self.solver_software_options[config['Solver_software']]
             self.vehicles_list[i].MPC_algorithm = self.MPC_algorithm_options[config['MPC_algorithm']]
-            self.vehicles_list[i].dynamic_model = self.dynamic_model_options[config['Dynamic_model']] 
+            self.vehicles_list[i].dynamic_model = self.dynamic_model_options[config['Dynamic_model']]
+            self.vehicles_list[i].actuator_dynamics = config['actuator_dynamics'] # signal to the solvers that they need to be reinitialized cause the position may have changed since last time they were called
             
             # set up solver type
             self.vehicles_list[i].set_solver_type(self.vehicles_list[i].solver_software,
                                                   self.vehicles_list[i].MPC_algorithm,
                                                   self.vehicles_list[i].dynamic_model,
-                                                  self.vehicles_list[i].single_layer) 
+                                                  self.vehicles_list[i].single_layer,
+                                                  self.vehicles_list[i].actuator_dynamics) 
             
             # check if lane width has changed
             if lane_width_old != self.vehicles_list[i].lane_width:
@@ -235,6 +237,14 @@ class path_handeling_utilities_class():
 class MPCC_controller_class(path_handeling_utilities_class):
     def __init__(self, car_number,dt_controller_rate):
 
+        # decide where to load the actuaror dynamics from
+        import importlib.resources
+        with importlib.resources.path('DART_dynamic_models', 'actuator_dynamics_saved_parameters') as act_dyn_data_path:
+            self.actuator_dynamics_params_folder = str(act_dyn_data_path)
+            print('actuator dynamics folder:', self.actuator_dynamics_params_folder)
+
+
+
         # set up default solver choices that will be overwritten by the dynamic reconfigure anyway so ok
         self.solver_software = 'ACADOS' # 'FORCES', 'ACADOS'
         self.MPC_algorithm = 'MPCC' # 'CAMPCC', 'MPCC_PP'    # solver algorithm can be standard MPCC or curvature-aware CAMPCC
@@ -256,6 +266,9 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.x_y_yaw_state = [0, 0, 0] 
         self.pose_msg_time = rospy.get_rostime() # initialize time of pose message
 
+        self.th_past_actions = np.zeros(40) # this can be a large number so that the mpc node will have enough (this is set in the mpc solver build)
+        self.st_past_actions = np.zeros(40) 
+
 
         # delay compensation if in the lab
         self.delay_compensation = True
@@ -266,11 +279,12 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.last_converged_single_layer = True
         self.reinitialize = True # set to true in the beginning so that solvers will be started with the initial guess (now only for single layer)
 
-
+        self.safety_value = 0
 
         # define selected solver
         self.single_layer = False
-        self.set_solver_type(self.solver_software, self.MPC_algorithm, self.dynamic_model,self.single_layer)
+        self.actuator_dynamics = False
+        self.set_solver_type(self.solver_software, self.MPC_algorithm, self.dynamic_model,self.single_layer,self.actuator_dynamics)
 
         #set up constant problem parameters 
         self.initialize_constant_parameters() # only run this once to initialize, then config will overwrite them
@@ -342,6 +356,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         # set up subscribers (inputs to the controller)
         self.vicon_subscriber = rospy.Subscriber('vicon/jetracer' + str(car_number), PoseWithCovarianceStamped, self.vicon_subscriber_callback)
 
+
         # set up publishers (outpus of the controller)
         self.throttle_publisher = rospy.Publisher('throttle_' + str(car_number), Float32, queue_size=1)
         self.steering_publisher = rospy.Publisher('steering_' + str(car_number), Float32, queue_size=1)
@@ -372,7 +387,8 @@ class MPCC_controller_class(path_handeling_utilities_class):
                                 'lane_width',
                                 'minimal_plotting', 
                                 'delay_compensation', 
-                                'Solver_software', 
+                                'Solver_software',
+                                'actuator_dynamics',
                                 'MPC_algorithm', 
                                 'Dynamic_model']
         # msg_GUI_fields = String()
@@ -634,7 +650,8 @@ class MPCC_controller_class(path_handeling_utilities_class):
                             self.lane_width,
                             self.minimal_plotting, 
                             self.delay_compensation, 
-                            self.solver_software, 
+                            self.solver_software,
+                            self.actuator_dynamics,
                             self.MPC_algorithm, 
                             self.dynamic_model]
         # convert values to a list of strings
@@ -650,7 +667,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.GUI_param_names_publisher.publish(msg_GUI)
 
 
-    def set_solver_type(self,solver_software, MPC_algorithm, dynamic_model,single_layer):
+    def set_solver_type(self,solver_software, MPC_algorithm, dynamic_model,single_layer,actuator_dynamics):
         # delete all previous solvers
         print('setting solver type')
         # try:
@@ -736,7 +753,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         
         else: #load single track solver
             if MPC_algorithm == 'CAMPCC':
-                self.single_layer_solver_generator_obj = generate_single_layer_CAMPCC(dynamic_model)
+                self.single_layer_solver_generator_obj = generate_single_layer_CAMPCC(dynamic_model,actuator_dynamics,self.actuator_dynamics_params_folder)
             else:
                 print('Single layer only works with CAMPCC, not updating solver type')
             
@@ -944,6 +961,14 @@ class MPCC_controller_class(path_handeling_utilities_class):
         xinit[3] = vx 
         xinit[4] = vy
         xinit[5] = omega
+        if self.actuator_dynamics:
+            # initialize past actions
+            n_th_past_actions = self.single_layer_solver_generator_obj.weights_th_FIR_solver.shape[0] -1
+            n_st_past_actions = self.single_layer_solver_generator_obj.weights_st_FIR_solver.shape[0] -1
+            past_th_st = [*self.th_past_actions[:n_th_past_actions],*self.st_past_actions[:n_st_past_actions]]
+            xinit[10:] = past_th_st
+
+
         # the other states should be zero
 
         # stack parameters for all time steps
@@ -966,7 +991,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
             #self.reinitialize == True
             if self.reinitialize == True:
                 print('resetting warm start first guess')
-                self.set_solver_type(self.solver_software,self.MPC_algorithm,self.dynamic_model,self.single_layer)
+                self.set_solver_type(self.solver_software,self.MPC_algorithm,self.dynamic_model,self.single_layer,self.actuator_dynamics)
                 
 
             try:
@@ -1066,6 +1091,14 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         self.throttle_publisher.publish(throttle_val)
         self.steering_publisher.publish(steering_val)
+
+        # update past values
+        if self.safety_value == 0:
+            self.th_past_actions = [0.0, *self.th_past_actions[:-1]]
+        else:
+            self.th_past_actions = [self.throttle, *self.th_past_actions[:-1]]
+        self.st_past_actions = [self.steering, *self.st_past_actions[:-1]]
+
 
         # publishe timestamped versions of the inputs to get the time delay data
         msg_mpc_th = ThreeTimeStampsFloat32()

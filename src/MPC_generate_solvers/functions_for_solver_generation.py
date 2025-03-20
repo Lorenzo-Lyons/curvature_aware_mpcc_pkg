@@ -1173,8 +1173,13 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         
         self.dynamic_model = dynamic_model
         self.actuator_dynamics = actuator_dynamics
-        self.solver_name_acados = 'single_layer_acados_CAMPCC' + dynamic_model + actuator_dynamics
-        self.solver_name_forces = 'single_layer_forces_CAMPCC' + dynamic_model + actuator_dynamics
+        if actuator_dynamics:
+            actuator_dynamics_name_tag = '_act_dyn'
+        else:
+            actuator_dynamics_name_tag = ''
+
+        self.solver_name_acados = 'single_layer_acados_CAMPCC_' + dynamic_model + actuator_dynamics_name_tag
+        self.solver_name_forces = 'single_layer_forces_CAMPCC_' + dynamic_model + actuator_dynamics_name_tag
 
         self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
         self.time_horizon = 1.5 * 0.5
@@ -1184,7 +1189,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
 
         # if actuator dynamics are enabled we must add extra states
-        if actuator_dynamics == '_act_dyn':
+        if actuator_dynamics:
             # load the weights from the actuator dynamics saved parameters
             self.load_actuator_dynamics(path_2_actuator_dynamics)
             self.act_FIR_states = len(self.weights_th_FIR_solver) + len(self.weights_st_FIR_solver) - 2 # minus 2 because the last value is the input at time now (u)
@@ -1230,6 +1235,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
                                                                             self.n_points_kernelized)
     
     def load_actuator_dynamics(self,path_2_folder):
+        print('loading actuator dynamics from folder: ', path_2_folder)
         # load the actuator dynamics parameters
         dt = np.load(path_2_folder + '/dt.npy').item()
         n_past_actions = np.load(path_2_folder + '/n_past_actions.npy').item()
@@ -1608,9 +1614,9 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
             sin = np.sin
         
         # --- vehicle dynamics constraint ---
-        if self.dynamic_model == "_kinematic_bicycle":
+        if self.dynamic_model == "kinematic_bicycle":
             x_dot, y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.kinematic_bicycle_continuous_dynamics(th_input,st_input,vx,yaw)
-        elif self.dynamic_model == "_dynamic_bicycle":
+        elif self.dynamic_model == "dynamic_bicycle":
             x_dot, y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_input,st_input,vx,vy,w,yaw)
         else:
             print('Dynamic_constraint: Invalid dynamic model setting')
@@ -1712,10 +1718,10 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         return ((lane_width+slack)/2)**2 - ((pos_x - ref_x)**2  + (pos_y - ref_y)**2)  
 
     def max_centrifugal_force_constraint(self,vx,w,slack,st_input):
-        if self.dynamic_model == "_kinematic_bicycle":
+        if self.dynamic_model == "kinematic_bicycle":
             steering_angle = self.steering_2_steering_angle(st_input,self.a_s_self,self.b_s_self,self.c_s_self,self.d_s_self,self.e_s_self)
             w_constr = vx * np.tan(steering_angle) / (self.lf_self+self.lr_self)
-        elif self.dynamic_model == "_dynamic_bicycle":
+        elif self.dynamic_model == "dynamic_bicycle":
             w_constr = w
         # evaluate linear contraint on the maximum centrifugal force
         # vx = 4.6 --> w = 0 (max vx)
