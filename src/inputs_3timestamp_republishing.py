@@ -18,13 +18,13 @@ class republish_inputs:
 
     def callback_throttle(self, msg):
         # add the last time stamp to the message
-        msg.header3.stamp = rospy.rospy.Time.now()
+        msg.header3.stamp = rospy.Time.now()
         #republish
         self.pub_throttle.publish(msg)
     
     def callback_steering(self, msg):
         # add the last time stamp to the message
-        msg.header3.stamp = rospy.rospy.Time.now()
+        msg.header3.stamp = rospy.Time.now()
         #republish
         self.pub_steering.publish(msg)
 

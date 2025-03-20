@@ -1011,6 +1011,20 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
 
         return xdot
     
+    def SVGP_continuous_dynamics(self,th_input,st_input,vx,vy,w,yaw):
+        
+        
+        # this is a placeholder for the SVGP model
+        
+        
+        pass
+
+
+
+
+
+
+    
     def kinematic_bicycle_continous_dynamics_forces(self,x,u):
         # extract control inputs
         th_input = u[0]
@@ -1042,6 +1056,12 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
 
         #return np.array([vx,0,w,th_input,0,st_input])
         return self.dynamic_bicycle_continuous_dynamics(th_input,st_input,vx,vy,w,yaw)
+
+
+
+
+
+
 
 
 
