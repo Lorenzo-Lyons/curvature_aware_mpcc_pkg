@@ -8,8 +8,8 @@ build_acados=False
 build_FORCES=True
 
 # select the solver to build MPCC or CAMPCC
-dynamic_models = ['_dynamic_bicycle'] # 'kinematic_bicycle', 'dynamic_bicycle'
-actuator_dynamics = '_act_dyn'
+dynamic_models = ['_dynamic_bicycle'] # '_kinematic_bicycle', '_dynamic_bicycle'
+actuator_dynamics = '_act_dyn'  #  '_act_dyn'    []
 
 # select where to load the actuator dynamics from
 current_script_path = os.path.realpath(__file__)

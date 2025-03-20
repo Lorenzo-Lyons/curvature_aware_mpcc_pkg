@@ -1172,14 +1172,14 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
     def __init__(self,dynamic_model,actuator_dynamics,path_2_actuator_dynamics):
         
         self.dynamic_model = dynamic_model
-        actuator_dynamics = actuator_dynamics
+        self.actuator_dynamics = actuator_dynamics
         self.solver_name_acados = 'single_layer_acados_CAMPCC' + dynamic_model + actuator_dynamics
         self.solver_name_forces = 'single_layer_forces_CAMPCC' + dynamic_model + actuator_dynamics
 
         self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
         self.time_horizon = 1.5 * 0.5
         self.N = 30 # stages
-        self.nx = 10 # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
+        self.nx_base = 10 # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
         self.nu = 3 # throttle, stteering, slack
 
 
@@ -1187,9 +1187,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         if actuator_dynamics == '_act_dyn':
             # load the weights from the actuator dynamics saved parameters
             self.load_actuator_dynamics(path_2_actuator_dynamics)
-            self.act_FIR_states = len(self.weights_th_FIR_solver) + len(self.weights_st_FIR_solver)
-            self.nx = self.nx + self.act_FIR_states
+            self.act_FIR_states = len(self.weights_th_FIR_solver) + len(self.weights_st_FIR_solver) - 2 # minus 2 because the last value is the input at time now (u)
+            self.nx = self.nx_base + self.act_FIR_states
             # no need to add the FRI since it will be baked into the dynamics
+        else:
+            self.nx = self.nx_base
 
             
 
@@ -1257,6 +1259,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         weights_th_solver = np.interp(time_vec_th_solver,time_vec_th,np.squeeze(weights_th[:n_past_actions_th]),right=0)
         weights_st_solver = np.interp(time_vec_st_solver,time_vec_st,np.squeeze(weights_st[:n_past_actions_st]),right=0)
 
+        # set small values to 0 to simplyfy things
+        threshold = 10**-6
+        weights_th_solver[np.abs(weights_th_solver) < threshold] = 0
+        weights_st_solver[np.abs(weights_st_solver) < threshold] = 0
+
         # assign to self
         self.weights_th_FIR_solver = weights_th_solver
         self.weights_st_FIR_solver = weights_st_solver
@@ -1282,7 +1289,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         model.p = p
 
         #unpack states
-        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(vertcat(model.u,model.x))
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(vertcat(model.u,model.x))
 
         # unpack parameters
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(model.p)
@@ -1370,10 +1377,15 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         #model.LSobjective = self.objective_LS_forces  # Assign the LSobjective function
     
 
-
         # Set dynamic constraint
-        model.continuous_dynamics = self.single_layer_planner_continous_dynamics_forces
+        if self.actuator_dynamics:
+            model.eq = self.single_layer_discrete_dynamics_actuators_forces
+        else:
+            model.continuous_dynamics = self.single_layer_planner_continous_dynamics_forces
+
         
+
+    
         # Set non linear constraints
         model.nh = self.n_inequality_constraints
         model.ineq = self.non_lin_constraint_forces
@@ -1382,10 +1394,13 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         
         # Define solver options
         codeoptions = forcespro.CodeOptions('FORCESNLPsolver') #get standard options
-        # continuous dynamics options
-        codeoptions.nlp.integrator.type = 'ForwardEuler' #'ERK4' #'ForwardEuler' #'ERK4' #'IRK2' # 'ForwardEuler' #
-        codeoptions.nlp.integrator.Ts = self.time_horizon / (self.N+1)
-        codeoptions.nlp.integrator.nodes = 5 # intermediate nodes for the integrator
+
+        if self.actuator_dynamics == False:
+            # continuous dynamics options
+            codeoptions.nlp.integrator.type = 'ForwardEuler' #'ERK4' #'ForwardEuler' #'ERK4' #'IRK2' # 'ForwardEuler' #
+            codeoptions.nlp.integrator.Ts = self.time_horizon / (self.N+1)
+            codeoptions.nlp.integrator.nodes = 5 # intermediate nodes for the integrator
+
 
         codeoptions.name = self.solver_name_forces
         codeoptions.printlevel = 0  #  1: summary line after each solve,   0: no prit
@@ -1437,8 +1452,15 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         ref_x = z[10]       # path reference point x
         ref_y = z[11]       # path reference point y
         ref_heading = z[12] # path reference heading
+        
+        if self.actuator_dynamics:
+            th_past = z[13:13+len(self.weights_th_FIR_solver)-1] # past throttle actions  (minus 1 because the first one is the current one)
+            st_past = z[13+len(self.weights_th_FIR_solver)-1:]
+        else:
+            th_past = []
+            st_past = []
 
-        return th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
+        return th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past
 
     def unpack_parameters(self,p):
         local_path_length = p[0] # length of the path segment
@@ -1500,7 +1522,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         return j
     
     def objective_forces(self, z, p):
-        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
         return self.objective(th_input,st_input,slack,pos_x,pos_y,ref_x,ref_y,q_con,q_u,vx,q_acc,q_v,s,local_path_length,labels_k,yaw,ref_heading)
 
@@ -1551,7 +1573,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         return casadi.vertcat(j1,j2,j3,j4,j5,j6)
 
     def objective_LS_forces(self,z,p):
-        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past= self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
         return self.objective_LS(th_input,st_input,slack,pos_x,pos_y,ref_x,ref_y,q_con,q_u,vx,q_acc,q_v,s,local_path_length,labels_k,yaw,ref_heading)
 
@@ -1570,7 +1592,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         return j_term_pos
     
     def objective_terminal_forces(self, z, p):
-        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
         return self.objective_terminal_cost(ref_heading, yaw,pos_x,pos_y,ref_x,ref_y,qt_pos,qt_rot,s,qt_s_high)
 
@@ -1586,9 +1608,9 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
             sin = np.sin
         
         # --- vehicle dynamics constraint ---
-        if self.dynamic_model == "kinematic_bicycle":
+        if self.dynamic_model == "_kinematic_bicycle":
             x_dot, y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.kinematic_bicycle_continuous_dynamics(th_input,st_input,vx,yaw)
-        elif self.dynamic_model == "dynamic_bicycle":
+        elif self.dynamic_model == "_dynamic_bicycle":
             x_dot, y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_input,st_input,vx,vy,w,yaw)
         else:
             print('Dynamic_constraint: Invalid dynamic model setting')
@@ -1625,21 +1647,75 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
     
     def single_layer_planner_continous_dynamics_forces(self, x, u, p):
         z = casadi.vertcat(u, x)
-        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past= self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
         return self.single_layer_continous_dynamics(local_path_length,labels_k,
                                                     th_input,st_input,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading)
     
+    def single_layer_discrete_dynamics_actuators_forces(self,z, p):
+        #z = casadi.vertcat(u, x)
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(z)
+        local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
+        return self.single_layer_discrete_dynamics_with_actuators(local_path_length,labels_k,
+                                                    th_input,st_input,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past)
+
+
+    def single_layer_discrete_dynamics_with_actuators(self,local_path_length,labels_k,
+                                                    th_input,st_input,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past):
+        # evaluate the th and st 
+        th_4_model = th_input * self.weights_th_FIR_solver[0] + \
+                    np.expand_dims(self.weights_th_FIR_solver[1:],0) @ th_past 
+        st_4_model = st_input * self.weights_st_FIR_solver[0] + \
+                    np.expand_dims(self.weights_st_FIR_solver[1:],0) @ st_past
+
+        # update past actions
+        th_past_next = casadi.vertcat(th_input,th_past[1:])
+        st_past_next = casadi.vertcat(st_input,st_past[1:])
+
+        # now evaluate the dynamics with the FIR-based actions
+        x_dot = self.single_layer_continous_dynamics(local_path_length,labels_k,
+                                                    th_input,st_input,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading)
+        
+        # integrating with simple Euler
+        dt_solver = self.time_horizon / self.N
+        # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_pas
+        pos_x_next = pos_x + x_dot[0] * dt_solver
+        pos_y_next = pos_y + x_dot[1] * dt_solver
+        yaw_next = yaw + x_dot[2] * dt_solver
+        vx_next = vx + x_dot[3] * dt_solver
+        vy_next = vy + x_dot[4] * dt_solver
+        w_next = w + x_dot[5] * dt_solver
+        s_next = s + x_dot[6] * dt_solver
+        ref_x_next = ref_x + x_dot[7] * dt_solver
+        ref_y_next = ref_y + x_dot[8] * dt_solver
+        ref_heading_next = ref_heading + x_dot[9] * dt_solver
+
+        # assemble new state
+        x_next = casadi.vertcat(pos_x_next,
+                                pos_y_next,
+                                yaw_next,
+                                vx_next,
+                                vy_next,
+                                w_next,
+                                s_next,
+                                ref_x_next,
+                                ref_y_next,
+                                ref_heading_next,
+                                th_past_next,
+                                st_past_next)
+        return x_next
+
+
 
 
     def lane_boundary_constraint(self,pos_x,pos_y,ref_x,ref_y,slack,lane_width):
         return ((lane_width+slack)/2)**2 - ((pos_x - ref_x)**2  + (pos_y - ref_y)**2)  
 
     def max_centrifugal_force_constraint(self,vx,w,slack,st_input):
-        if self.dynamic_model == "kinematic_bicycle":
+        if self.dynamic_model == "_kinematic_bicycle":
             steering_angle = self.steering_2_steering_angle(st_input,self.a_s_self,self.b_s_self,self.c_s_self,self.d_s_self,self.e_s_self)
             w_constr = vx * np.tan(steering_angle) / (self.lf_self+self.lr_self)
-        elif self.dynamic_model == "dynamic_bicycle":
+        elif self.dynamic_model == "_dynamic_bicycle":
             w_constr = w
         # evaluate linear contraint on the maximum centrifugal force
         # vx = 4.6 --> w = 0 (max vx)
@@ -1654,7 +1730,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
 
     def non_lin_constraint_forces(self,z, p):
-        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading = self.unpack_state(z)
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
         return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width),*self.max_centrifugal_force_constraint(vx,w,slack,st_input)]
 
