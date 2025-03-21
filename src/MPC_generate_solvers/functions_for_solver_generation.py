@@ -1011,15 +1011,6 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
 
         return xdot
     
-    def SVGP_continuous_dynamics(self,th_input,st_input,vx,vy,w,yaw):
-        
-        
-        # this is a placeholder for the SVGP model
-        
-        
-        pass
-
-
 
 
 
@@ -1169,7 +1160,7 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
 class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end inherits from DART system identification
     # here we need the dynamic constraints of teh low level controller
 
-    def __init__(self,dynamic_model,actuator_dynamics,path_2_actuator_dynamics):
+    def __init__(self,dynamic_model,actuator_dynamics,path_2_actuator_dynamics,GP_params_folder):
         
         self.dynamic_model = dynamic_model
         self.actuator_dynamics = actuator_dynamics
@@ -1197,6 +1188,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
             # no need to add the FRI since it will be baked into the dynamics
         else:
             self.nx = self.nx_base
+
+        if dynamic_model == "dynamic_bicycle_GP":
+            from DART_dynamic_models.dart_dynamic_models import SVGP_unified_analytic
+            self.SVGP_unified_analytic_obj = SVGP_unified_analytic()
+            self.SVGP_unified_analytic_obj.load_parameters(GP_params_folder)
 
             
 
@@ -1242,6 +1238,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         weights_th = np.load(path_2_folder + '/weights_throttle.npy')
         weights_st = np.load(path_2_folder + '/weights_steering.npy')
 
+
         self.dt_FIR = dt
         self.n_past_actions_FRI = n_past_actions
         self.weights_th_FIR = weights_th
@@ -1273,6 +1270,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # assign to self
         self.weights_th_FIR_solver = weights_th_solver
         self.weights_st_FIR_solver = weights_st_solver
+
 
 
 
@@ -1618,7 +1616,16 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
             x_dot, y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.kinematic_bicycle_continuous_dynamics(th_input,st_input,vx,yaw)
         elif self.dynamic_model == "dynamic_bicycle":
             x_dot, y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_input,st_input,vx,vy,w,yaw)
+        elif self.dynamic_model == "dynamic_bicycle_GP":
+            # evaluate GP contribution
+                                                                                    # x_star = [th st vx vy w]
+
+
+            x_dot, y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.SVGP_continuous_dynamics(th_input,st_input,vx,vy,w,yaw,
+                                                                                             self.SVGP_unified_analytic_obj.use_nominal_model.item())
+
         else:
+            print('')
             print('Dynamic_constraint: Invalid dynamic model setting')
 
         s_star = s / local_path_length # normalize s
@@ -1647,6 +1654,51 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         state_dot = [x_dot,y_dot, yaw_dot, vx_dot, vy_dot, w_dot,  s_dot ,x_ref_dot, y_ref_dot, ref_heading_dot]
         return state_dot
     
+
+    def SVGP_continuous_dynamics(self,th_input,st_input,vx,vy,w,yaw,use_nominal_model):
+
+        x_star = casadi.horzcat(th_input,st_input,vx,vy,w)
+        mean_x, mean_y, mean_w = self.SVGP_unified_analytic_obj.predictive_mean_only(x_star)
+        
+        if use_nominal_model:
+            #evaluate steering angle 
+            steering_angle = self.steering_2_steering_angle(st_input,self.a_s_self,self.b_s_self,self.c_s_self,self.d_s_self,self.e_s_self)
+
+            # # evaluate longitudinal forces
+            Fx_wheels = self.motor_force(th_input,vx,self.a_m_self,self.b_m_self,self.c_m_self)\
+                        + self.rolling_friction(vx,self.a_f_self,self.b_f_self,self.c_f_self,self.d_f_self)\
+                        + self.F_friction_due_to_steering(steering_angle,vx,self.a_stfr_self,self.b_stfr_self,self.d_stfr_self,self.e_stfr_self)
+
+            c_front = (self.m_front_wheel_self)/self.m_self
+            c_rear = (self.m_rear_wheel_self)/self.m_self
+
+            # redistribute Fx to front and rear wheels according to normal load
+            Fx_front = Fx_wheels * c_front
+            Fx_rear = Fx_wheels * c_rear
+
+            #evaluate slip angles
+            alpha_f,alpha_r = self.evaluate_slip_angles(vx,vy,w,self.lf_self,self.lr_self,steering_angle)
+
+            #lateral forces
+            Fy_wheel_f = self.lateral_tire_force(alpha_f,self.d_t_f_self,self.c_t_f_self,self.b_t_f_self,self.m_front_wheel_self)
+            Fy_wheel_r = self.lateral_tire_force(alpha_r,self.d_t_r_self,self.c_t_r_self,self.b_t_r_self,self.m_rear_wheel_self)
+
+            acc_x_dyn_bike,acc_y_dyn_bike,acc_w_dyn_bike = self.solve_rigid_body_dynamics(vx,vy,w,steering_angle,Fx_front,Fx_rear,Fy_wheel_f,Fy_wheel_r,self.lf_self,self.lr_self,self.m_self,self.Jz_self)
+            
+            acc_x = mean_x + acc_x_dyn_bike
+            acc_y = mean_y + acc_y_dyn_bike
+            acc_w = mean_w + acc_w_dyn_bike
+        else:
+            acc_x = mean_x
+            acc_y = mean_y
+            acc_w = mean_w
+
+        xdot = self.produce_xdot(yaw,vx,vy,w,acc_x,acc_y,acc_w)
+        
+        return xdot
+
+
+
     def soft_min(self, x, min_val):
         sharpness = 10
         return min_val + 0.5*(1 + np.tanh(sharpness*(x-min_val)))*(x-min_val)
@@ -1721,7 +1773,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         if self.dynamic_model == "kinematic_bicycle":
             steering_angle = self.steering_2_steering_angle(st_input,self.a_s_self,self.b_s_self,self.c_s_self,self.d_s_self,self.e_s_self)
             w_constr = vx * np.tan(steering_angle) / (self.lf_self+self.lr_self)
-        elif self.dynamic_model == "dynamic_bicycle":
+        elif self.dynamic_model == "dynamic_bicycle" or self.dynamic_model == "dynamic_bicycle_GP":
             w_constr = w
         # evaluate linear contraint on the maximum centrifugal force
         # vx = 4.6 --> w = 0 (max vx)

@@ -242,7 +242,8 @@ class MPCC_controller_class(path_handeling_utilities_class):
         with importlib.resources.path('DART_dynamic_models', 'actuator_dynamics_saved_parameters') as act_dyn_data_path:
             self.actuator_dynamics_params_folder = str(act_dyn_data_path)
             print('actuator dynamics folder:', self.actuator_dynamics_params_folder)
-
+        with importlib.resources.path('DART_dynamic_models', 'SVGP_saved_parameters_high_speed') as data_path:
+            self.GP_params_folder = str(data_path)
 
 
         # set up default solver choices that will be overwritten by the dynamic reconfigure anyway so ok
@@ -753,7 +754,8 @@ class MPCC_controller_class(path_handeling_utilities_class):
         
         else: #load single track solver
             if MPC_algorithm == 'CAMPCC':
-                self.single_layer_solver_generator_obj = generate_single_layer_CAMPCC(dynamic_model,actuator_dynamics,self.actuator_dynamics_params_folder)
+                                                        
+                self.single_layer_solver_generator_obj = generate_single_layer_CAMPCC(dynamic_model,actuator_dynamics,self.actuator_dynamics_params_folder,self.GP_params_folder)
             else:
                 print('Single layer only works with CAMPCC, not updating solver type')
             

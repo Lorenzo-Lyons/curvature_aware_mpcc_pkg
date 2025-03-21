@@ -8,19 +8,31 @@ build_acados=False
 build_FORCES=True
 
 # select the solver to build MPCC or CAMPCC
-dynamic_models = ['dynamic_bicycle'] # 'kinematic_bicycle', 'dynamic_bicycle'
-actuator_dynamics = True
+dynamic_models = ['kinematic_bicycle','dynamic_bicycle','dynamic_bicycle_GP'] # 'kinematic_bicycle', 'dynamic_bicycle', 'dynamic_bicycle_GP'
+actuator_dynamics = [True, False]
 
 # select where to load the actuator dynamics from
 current_script_path = os.path.realpath(__file__)
 current_script_dir = os.path.dirname(current_script_path)
 
-actuator_dynamics_folder = os.path.join(current_script_dir,'actuator_dynamics_saved_parameters')
+
+# Using GP and actuator dynamics from DART package
+import importlib.resources
+# import the GP parameters
+with importlib.resources.path('DART_dynamic_models', 'SVGP_saved_parameters_high_speed') as data_path:
+    GP_params_folder = str(data_path)
+# import the actuator dynamics parameters
+with importlib.resources.path('DART_dynamic_models', 'actuator_dynamics_saved_parameters') as data_path:
+    actuator_dynamics_folder = str(data_path)
+
+
 
 
 for dynamic_model in dynamic_models:
+    for actuator_dynamics_tag in actuator_dynamics:
+        print('Building solver for dynamic model: ', dynamic_model, ' with actuator dynamics: ', actuator_dynamics)
     # instantiate the class
-    solver_maker_obj = generate_single_layer_CAMPCC(dynamic_model, actuator_dynamics, actuator_dynamics_folder)
+    solver_maker_obj = generate_single_layer_CAMPCC(dynamic_model, actuator_dynamics_tag, actuator_dynamics_folder,GP_params_folder)
 
     # change current folder to be where the solvers need to be put
 
