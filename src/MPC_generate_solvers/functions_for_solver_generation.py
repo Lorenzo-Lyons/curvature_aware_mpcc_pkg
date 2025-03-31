@@ -1173,8 +1173,8 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         self.solver_name_forces = 'single_layer_forces_CAMPCC_' + dynamic_model + actuator_dynamics_name_tag
 
         self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
-        self.time_horizon = 1.5 * 0.5
-        self.N = 30 # stages
+        self.time_horizon = 1.5 * 0.5 #1.5 * 0.5
+        self.N = 30 # stages 30
         self.nx_base = 10 # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
         self.nu = 3 # throttle, stteering, slack
 

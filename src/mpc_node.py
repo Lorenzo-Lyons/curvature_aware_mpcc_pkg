@@ -668,21 +668,11 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.GUI_param_names_publisher.publish(msg_GUI)
 
 
+
+
     def set_solver_type(self,solver_software, MPC_algorithm, dynamic_model,single_layer,actuator_dynamics):
         # delete all previous solvers
         print('setting solver type')
-        # try:
-        #     del self.single_layer_solver
-        # except:
-        #     pass
-        # try:
-        #     del self.high_level_solver
-        # except:
-        #     pass
-        # try:
-        #     del self.low_level_solver
-        # except:
-        #     pass
 
         if single_layer==False:
             # --- load high level solver for reference generation ---
@@ -720,7 +710,8 @@ class MPCC_controller_class(path_handeling_utilities_class):
                     self.high_level_solver = forcespro.nlp.Solver.from_directory(high_level_solver_path)
                     print('________________________________________________________________________________________')
                     print('Successfully loaded high level solver: ' + self.high_level_solver_generator_obj.solver_name_forces)
-
+            # adjust control rate
+            self.dt_controller_rate = self.high_level_solver_generator_obj.time_horizon/self.high_level_solver_generator_obj.N
 
 
             # --- load low level solver for control generation---
@@ -749,7 +740,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
                 else:
                     self.low_level_solver = forcespro.nlp.Solver.from_directory(low_level_solver_path)
                     print('Successfully loaded low level solver: ' + self.low_level_solver_generator_obj.solver_name_forces)
-        
+
         
         
         else: #load single track solver
@@ -774,10 +765,12 @@ class MPCC_controller_class(path_handeling_utilities_class):
                 self.single_layer_solver = forcespro.nlp.Solver.from_directory(single_layer_solver_path)
                 print('________________________________________________________________________________________')
                 print('Successfully loaded single layer solver: ' + self.single_layer_solver_generator_obj.solver_name_forces)
-
+            
+            # adjust control rate
+            self.dt_controller_rate = self.single_layer_solver_generator_obj.time_horizon/self.single_layer_solver_generator_obj.N
 
         
-        
+        print('control rate (dt):', np.round(self.dt_controller_rate,3))
         print('________________________________________________________________________________________')
 
 
@@ -989,8 +982,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
             # - set up initial guess and parameters
             x0_array_forces = X0_array_single_layer.ravel()
             all_params_array_forces = param_array.ravel()
-            # , "reinitialize": False
-            #self.reinitialize == True
+
             if self.reinitialize == True:
                 print('resetting warm start first guess')
                 self.set_solver_type(self.solver_software,self.MPC_algorithm,self.dynamic_model,self.single_layer,self.actuator_dynamics)
@@ -1477,6 +1469,9 @@ if __name__ == '__main__':
         while not rospy.is_shutdown():
             try:
                 start_clock_time = rospy.get_rostime()
+                # get controller frequency
+                dt_controller = vehicle_controllers_list[0].dt_controller_rate
+                rate = rospy.Rate(1 / dt_controller)
                 # run 1 loop on all vehicles
                 for i in range(len(vehicle_controllers_list)):
                     # check if vehicle is stationary
