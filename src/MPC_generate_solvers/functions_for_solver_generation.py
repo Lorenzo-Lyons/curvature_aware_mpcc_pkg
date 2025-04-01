@@ -1176,8 +1176,8 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         self.solver_name_forces = 'single_layer_forces_CAMPCC_' + dynamic_model + actuator_dynamics_name_tag
 
         self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
-        self.time_horizon = 0.75 #1.5 * 0.5
-        self.N = 15 # stages 30
+        self.time_horizon = 1.0 #1.5 * 0.5
+        self.N = 20 # stages 30
         self.nx_base = 10 # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
         self.nu = 3 # throttle, stteering, slack
 
@@ -1409,11 +1409,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
             # continuous dynamics options
             codeoptions.nlp.integrator.type = 'ERK4' #'ERK4' #'ForwardEuler' #'ERK4' #'IRK2' # 'ForwardEuler' #
             codeoptions.nlp.integrator.Ts = self.time_horizon / (self.N+1)
-            codeoptions.nlp.integrator.nodes = 5 # intermediate nodes for the integrator
+            codeoptions.nlp.integrator.nodes = 2 # intermediate nodes for the integrator
 
 
         codeoptions.name = self.solver_name_forces
-        codeoptions.printlevel = 2  #  1: summary line after each solve,   0: no prit
+        codeoptions.printlevel = 0  #  1: summary line after each solve,   0: no prit
         codeoptions.BuildSimulinkBlock = 0  # disable simulink block generation because we don't need it
         codeoptions.maxit = 200  # maximum iterations
         codeoptions.noVariableElimination = 1  # enable or disable variable simplification (like if first stage is constrained)
@@ -1422,7 +1422,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
         # # set tolerances
         codeoptions.sqp_nlp.TolStat = 1e-3 # Tolerance on stationarity
-        codeoptions.sqp_nlp.TolEq = 1e-6 # Tolerance on equality constraints
+        codeoptions.sqp_nlp.TolEq = 1e-3 # Tolerance on equality constraints
 
         # set warm start behaviour for dual variables (so always warm start from solver perspective, even if in practice you give it a vector of zeros)
         codeoptions.init = 2  # 0 cold, 1 centered, 2 warm
@@ -1436,7 +1436,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         #codeoptions.solver_timeout = 1  # Set a 40 ms time limit we assume the controller rate is 20Hz but you need some time to do other things in the control loop
         #codeoptions.solver_exit_external = 1
         codeoptions.sqp_nlp.maxqps = 3
-        codeoptions.sqp_nlp.maxSQPit = 10
+        #codeoptions.sqp_nlp.maxSQPit = 10  # this seems to do nothing
         #codeoptions.sqp_nlp.reg_hessian = 1e-3  # regularization of hessian (default is 5 * 10^(-9))
         #codeoptions.sqp_nlp.use_line_search = False  # Enable line search (default)
  
@@ -1523,7 +1523,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
             + q_u * th_input**2\
             + q_acc * acc_x ** 2\
             + 100 * slack**2\
-            + q_v * (s_dot-5)**2  # much better like this than - q_v * s_dot**2\
+            + q_v * (s_dot-10)**2  # much better like this than - q_v * s_dot**2\
             #+ q_v * (vx-4)**2\
             
             

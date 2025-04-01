@@ -1018,6 +1018,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
     
     def check_solver_convergence(self,exitflag,solver_converged_previous,hig_low_single_tag):
+
         if hig_low_single_tag == 0:
             solver_level = 'HIGH level'
         elif hig_low_single_tag == 1:
@@ -1058,10 +1059,11 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         # as a recovery measure re-initialize the solver from the standard first guess
         if hig_low_single_tag == 2:
-            if exitflag != all_good_number:
-                self.reinitialize = True # reset if the solver did not converge
-            else:
+            if exitflag == all_good_number or maxit_reached == True: # don't reinitialize if the solver reached max iter cause they are usually very low
                 self.reinitialize = False
+            else:
+                self.reinitialize = True # reset if the solver did not converge
+
 
         # publish if the solver converged or not
         if hig_low_single_tag == 0 or hig_low_single_tag == 2: #only for high and single layer
@@ -1076,8 +1078,8 @@ class MPCC_controller_class(path_handeling_utilities_class):
     def publish_control_inputs(self, output_array_low_level):
         #print('last converged', self.last_converged)    
         # publish input values
-        print('throttle:', output_array_low_level[:, 0])
-        print('steering:', output_array_low_level[:, 1])
+        #print('throttle:', output_array_low_level[:, 0])
+        #print('steering:', output_array_low_level[:, 1])
 
         throttle_val = Float32(output_array_low_level[0, 0])
         steering_val = Float32(output_array_low_level[0, 1])
