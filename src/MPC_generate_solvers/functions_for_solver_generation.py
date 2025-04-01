@@ -982,31 +982,34 @@ class generate_low_level_solver_ocp(model_functions): # inherits from DART syste
         return xdot
 
     def dynamic_bicycle_continuous_dynamics(self,th_input,st_input,vx,vy,w,yaw):
-
-        #evaluate steering angle 
-        steering_angle = self.steering_2_steering_angle(st_input,self.a_s_self,self.b_s_self,self.c_s_self,self.d_s_self,self.e_s_self)
-
-        # # evaluate longitudinal forces
-        Fx_wheels = self.motor_force(th_input,vx,self.a_m_self,self.b_m_self,self.c_m_self)\
-                    + self.rolling_friction(vx,self.a_f_self,self.b_f_self,self.c_f_self,self.d_f_self)\
-                    + self.F_friction_due_to_steering(steering_angle,vx,self.a_stfr_self,self.b_stfr_self,self.d_stfr_self,self.e_stfr_self)
-
-        c_front = (self.m_front_wheel_self)/self.m_self
-        c_rear = (self.m_rear_wheel_self)/self.m_self
-
-        # redistribute Fx to front and rear wheels according to normal load
-        Fx_front = Fx_wheels * c_front
-        Fx_rear = Fx_wheels * c_rear
-
-        #evaluate slip angles
-        alpha_f,alpha_r = self.evaluate_slip_angles(vx,vy,w,self.lf_self,self.lr_self,steering_angle)
-
-        #lateral forces
-        Fy_wheel_f = self.lateral_tire_force(alpha_f,self.d_t_f_self,self.c_t_f_self,self.b_t_f_self,self.m_front_wheel_self)
-        Fy_wheel_r = self.lateral_tire_force(alpha_r,self.d_t_r_self,self.c_t_r_self,self.b_t_r_self,self.m_rear_wheel_self)
-
-        acc_x,acc_y,acc_w = self.solve_rigid_body_dynamics(vx,vy,w,steering_angle,Fx_front,Fx_rear,Fy_wheel_f,Fy_wheel_r,self.lf_self,self.lr_self,self.m_self,self.Jz_self)
         
+
+        # #evaluate steering angle 
+        # steering_angle = self.steering_2_steering_angle(st_input,self.a_s_self,self.b_s_self,self.c_s_self,self.d_s_self,self.e_s_self)
+
+        # # # evaluate longitudinal forces
+        # Fx_wheels = self.motor_force(th_input,vx,self.a_m_self,self.b_m_self,self.c_m_self)\
+        #             + self.rolling_friction(vx,self.a_f_self,self.b_f_self,self.c_f_self,self.d_f_self)\
+        #             + self.F_friction_due_to_steering(steering_angle,vx,self.a_stfr_self,self.b_stfr_self,self.d_stfr_self,self.e_stfr_self)
+
+        # c_front = (self.m_front_wheel_self)/self.m_self
+        # c_rear = (self.m_rear_wheel_self)/self.m_self
+
+        # # redistribute Fx to front and rear wheels according to normal load
+        # Fx_front = Fx_wheels * c_front
+        # Fx_rear = Fx_wheels * c_rear
+
+        # #evaluate slip angles
+        # alpha_f,alpha_r = self.evaluate_slip_angles(vx,vy,w,self.lf_self,self.lr_self,steering_angle)
+
+        # #lateral forces
+        # Fy_wheel_f = self.lateral_tire_force(alpha_f,self.d_t_f_self,self.c_t_f_self,self.b_t_f_self,self.m_front_wheel_self)
+        # Fy_wheel_r = self.lateral_tire_force(alpha_r,self.d_t_r_self,self.c_t_r_self,self.b_t_r_self,self.m_rear_wheel_self)
+
+        # acc_x,acc_y,acc_w = self.solve_rigid_body_dynamics(vx,vy,w,steering_angle,Fx_front,Fx_rear,Fy_wheel_f,Fy_wheel_r,self.lf_self,self.lr_self,self.m_self,self.Jz_self)
+        
+        acc_x,acc_y,acc_w = self.dynamic_bicycle(th_input, st_input, vx, vy, w )
+
         xdot = self.produce_xdot(yaw,vx,vy,w,acc_x,acc_y,acc_w)
 
         return xdot
@@ -1173,8 +1176,8 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         self.solver_name_forces = 'single_layer_forces_CAMPCC_' + dynamic_model + actuator_dynamics_name_tag
 
         self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
-        self.time_horizon = 1.5 * 0.5 #1.5 * 0.5
-        self.N = 30 # stages 30
+        self.time_horizon = 0.75 #1.5 * 0.5
+        self.N = 15 # stages 30
         self.nx_base = 10 # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
         self.nu = 3 # throttle, stteering, slack
 
@@ -1207,7 +1210,10 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         #self.max_centrifugal_force = 30 #6.5 # m/s^2
         # upper / lower bound on the control inputs
                         #  th_input,st_input,slack,
-        self.u_l = np.array([0.0,-1, 0])
+        from DART_dynamic_models.dart_dynamic_models import model_functions
+        mf = model_functions()
+
+        self.u_l = np.array([-mf.c_m_self,-1, 0])
         self.u_u = np.array([1.0,+1, 100])
         # upper- lower bound on the states
                             # pos_x ,pos_y, yaw, vx,    vy,  w,  s,    ref_x,ref_y,ref_heading
@@ -1393,21 +1399,21 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # Set non linear constraints
         model.nh = self.n_inequality_constraints
         model.ineq = self.non_lin_constraint_forces
-        model.hl = np.zeros(3)#np.array([0.0,0.0,0.0])
-        model.hu = np.ones(3)*np.infty#np.array([1000.0,1000.0,1000.0])  # upper bound on inequality constraints
+        model.hl = np.zeros(3)   #np.array([0.0,0.0,0.0])
+        model.hu = np.ones(3)*np.infty  #np.array([1000.0,1000.0,1000.0])  # upper bound on inequality constraints
         
         # Define solver options
         codeoptions = forcespro.CodeOptions('FORCESNLPsolver') #get standard options
 
         if self.actuator_dynamics == False:
             # continuous dynamics options
-            codeoptions.nlp.integrator.type = 'ForwardEuler' #'ERK4' #'ForwardEuler' #'ERK4' #'IRK2' # 'ForwardEuler' #
+            codeoptions.nlp.integrator.type = 'ERK4' #'ERK4' #'ForwardEuler' #'ERK4' #'IRK2' # 'ForwardEuler' #
             codeoptions.nlp.integrator.Ts = self.time_horizon / (self.N+1)
             codeoptions.nlp.integrator.nodes = 5 # intermediate nodes for the integrator
 
 
         codeoptions.name = self.solver_name_forces
-        codeoptions.printlevel = 0  #  1: summary line after each solve,   0: no prit
+        codeoptions.printlevel = 2  #  1: summary line after each solve,   0: no prit
         codeoptions.BuildSimulinkBlock = 0  # disable simulink block generation because we don't need it
         codeoptions.maxit = 200  # maximum iterations
         codeoptions.noVariableElimination = 1  # enable or disable variable simplification (like if first stage is constrained)
@@ -1415,13 +1421,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
 
         # # set tolerances
-        # codeoptions.nlp.TolStat = 1e-3  # inf norm tol. on stationarity
-        # codeoptions.nlp.TolEq = 1e-3  # tol. on equality constraints
-        # codeoptions.nlp.TolIneq = 1e-3  # tol. on inequality constraints
-        # codeoptions.nlp.TolComp = 1e-3  # tol. on complementarity
+        codeoptions.sqp_nlp.TolStat = 1e-3 # Tolerance on stationarity
+        codeoptions.sqp_nlp.TolEq = 1e-6 # Tolerance on equality constraints
 
         # set warm start behaviour for dual variables (so always warm start from solver perspective, even if in practice you give it a vector of zeros)
-        codeoptions.init = 0  # 0 cold, 1 centered, 2 warm
+        codeoptions.init = 2  # 0 cold, 1 centered, 2 warm
 
         #set overwrite behviour
         codeoptions.overwrite = 1 # 0 never, 1 always, 2 (Defaul) ask
@@ -1431,9 +1435,9 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         #codeoptions.nlp.hessian_approximation = 'gauss-newton'
         #codeoptions.solver_timeout = 1  # Set a 40 ms time limit we assume the controller rate is 20Hz but you need some time to do other things in the control loop
         #codeoptions.solver_exit_external = 1
-        codeoptions.sqp_nlp.maxqps = 5
+        codeoptions.sqp_nlp.maxqps = 3
         codeoptions.sqp_nlp.maxSQPit = 10
-        codeoptions.sqp_nlp.reg_hessian = 1e-1  # regularization of hessian (default is 5 * 10^(-9))
+        #codeoptions.sqp_nlp.reg_hessian = 1e-3  # regularization of hessian (default is 5 * 10^(-9))
         #codeoptions.sqp_nlp.use_line_search = False  # Enable line search (default)
  
 
@@ -1516,10 +1520,10 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
         j = j_path\
             + q_u * st_input ** 2\
-            + q_u * (th_input-1)**2\
+            + q_u * th_input**2\
             + q_acc * acc_x ** 2\
             + 100 * slack**2\
-            + q_v * (s_dot-15)**2  # much better like this than - q_v * s_dot**2\
+            + q_v * (s_dot-5)**2  # much better like this than - q_v * s_dot**2\
             #+ q_v * (vx-4)**2\
             
             

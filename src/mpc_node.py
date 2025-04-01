@@ -1076,6 +1076,9 @@ class MPCC_controller_class(path_handeling_utilities_class):
     def publish_control_inputs(self, output_array_low_level):
         #print('last converged', self.last_converged)    
         # publish input values
+        print('throttle:', output_array_low_level[:, 0])
+        print('steering:', output_array_low_level[:, 1])
+
         throttle_val = Float32(output_array_low_level[0, 0])
         steering_val = Float32(output_array_low_level[0, 1])
 
