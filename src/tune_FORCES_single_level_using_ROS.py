@@ -32,24 +32,14 @@ max_laps = 3
 # select algorithm to tune
 MPC_algorithm = 'CAMPCC' #
 single_layer_tag = True
-set_up_GUI_optuna_obj = set_up_GUI_optuna(GUI_mpc_node,single_layer_tag,MPC_algorithm)
+ROS_study = True
+set_up_GUI_optuna_obj = set_up_GUI_optuna(GUI_mpc_node,single_layer_tag,MPC_algorithm,ROS_study)
 
 
 # set dart simulator parameters
-GUI_client_simulator.update_configuration({"disturbance": True})
-GUI_client_simulator.update_configuration({"dynamic_model_choice": 3})
-
-
-
-
-# # set mpc node parameters
-# lane_violation_cost = 10
-# lane_width = 0.6
-# GUI_mpc_node.update_configuration({"lane_width": lane_width})
-# GUI_mpc_node.update_configuration({"Solver_software": 1})
-# GUI_mpc_node.update_configuration({"MPC_algorithm": algorithm_number})
-# GUI_mpc_node.update_configuration({"Dynamic_model": 1})   # dynamic bicycle model
-# GUI_mpc_node.update_configuration({"V_target": 3.5})
+# for now using just the dynamic bicycle model # NOTE update this with the SVGP model and the disturbance once I hav ethe new dataset
+GUI_client_simulator.update_configuration({"disturbance": False})
+GUI_client_simulator.update_configuration({"dynamic_model_choice": 2})
 
 
 
@@ -65,20 +55,14 @@ def set_mpc_node_GUI(trial,GUI_mpc_node):
     # GUI_mpc_node.update_configuration({"single_layer": True})
     # generate parameters for optuna study
     # #local_path_length,       q_con,      q_u,     q_acc,     qt_pos_high,      qt_rot_high,    lane_width,        qt_s_high,  q_v, labels_k
-    q_con = trial.suggest_float("q_con", 0.001, 10, log=True)
-    qt_pos_high = trial.suggest_float("qt_pos_high", 0.01, 100, log=True)
-    qt_rot_high = trial.suggest_float("qt_rot_high", 0.01, 100, log=True)
-    qt_s_high = trial.suggest_float("qt_s_high", 0.01, 20, log=True)
-    q_v = trial.suggest_float("q_v", 0.001, 10, log=True)
-    q_u = trial.suggest_float("q_u", 0.001, 1, log=True)
-    q_acc = trial.suggest_float("q_acc", 0.001, 1, log=True)
+    q_con = trial.suggest_float("q_con", 0.001, 1, log=True)
+    q_v = trial.suggest_float("q_v", 0.001, 0.2, log=True)
+    q_u = trial.suggest_float("q_u", 0.001, 0.2, log=True)
+    q_acc = trial.suggest_float("q_acc", 0.001, 0.2, log=True)
 
 
     # set GUI parameters
     GUI_mpc_node.update_configuration({"q_con": q_con})
-    GUI_mpc_node.update_configuration({"qt_pos_high": qt_pos_high})
-    GUI_mpc_node.update_configuration({"qt_rot_high": qt_rot_high})
-    GUI_mpc_node.update_configuration({"qt_s_high": qt_s_high})
     GUI_mpc_node.update_configuration({"q_v": q_v})
     GUI_mpc_node.update_configuration({"q_u": q_u})
     GUI_mpc_node.update_configuration({"q_acc": q_acc})
@@ -172,7 +156,10 @@ def objective(trial):
 study_name = set_up_GUI_optuna_obj.study_name #"optuna_studies/optuna_results_SINGLE_layer_ROS_" + MPC_algorithm
 storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
 
-study = optuna.create_study(study_name=study_name, direction="minimize", storage=storage_name, load_if_exists=True)
+
+from optuna.samplers import TPESampler
+# Create a study with Bayesian Optimization (TPE)
+study = optuna.create_study(study_name=study_name, direction="minimize", storage=storage_name, load_if_exists=True,sampler=TPESampler())
 study.optimize(objective, n_trials=100)
 
 print("Best hyperparameters:", study.best_params)

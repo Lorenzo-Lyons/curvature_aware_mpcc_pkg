@@ -19,9 +19,11 @@ class set_up_GUI_optuna(): # inherits from DART system identification
         GUI_mpc_node.update_configuration({"Solver_software": 1})
         GUI_mpc_node.update_configuration({"MPC_algorithm": algorithm_number})
         GUI_mpc_node.update_configuration({"Dynamic_model": 1})   # dynamic bicycle model
+        GUI_mpc_node.update_configuration({"qt_pos_high": 50})
+        GUI_mpc_node.update_configuration({"qt_rot_high": 10})
         if single_layer_tag:
             GUI_mpc_node.update_configuration({"single_layer": True})
-            GUI_mpc_node.update_configuration({"V_target": 3.5})
+            GUI_mpc_node.update_configuration({"V_target": 3}) # this is actually not used in the solver but only for the path params
             single_layer_name = 'SINGLE_layer_'
         else:
             GUI_mpc_node.update_configuration({"single_layer": False})
