@@ -1419,29 +1419,36 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         codeoptions.noVariableElimination = 1  # enable or disable variable simplification (like if first stage is constrained)
         codeoptions.nlp.stack_parambounds = True  # determines if the parameters can simply be stacked (but not sure exactly what it does)
 
+        # 
+        codeoptions.parallel = 1 # this doesn't really do much
+        codeoptions.solvemethod = 'SQP_NLP' # 'SQP_NLP' # 'PDIP_NLP' # changing to non linear primal dual method  'SQP_NLP'
+        codeoptions.init = 2  # 0 cold, 1 centered, 2 warm (should not apply to sqp)
+        codeoptions.overwrite = 1 # 0 never, 1 always, 2 (Defaul) ask         #set overwrite behviour
 
-        # # set tolerances
+
+        # set sqp parameters
+        #codeoptions.sqp_nlp.rti = 0 # 0: no RTI, 1: RTI
+        codeoptions.sqp_nlp.maxSQPit = 1  # this seems to do nothing (?)
+        #codeoptions.sqp_nlp.qp_timeout = 0 # 0 no timeout, 1 yes timeout
+        codeoptions.sqp_nlp.maxqps = 3   # this seems to do nothing (?)
+        #codeoptions.sqp_nlp.use_line_search = 1 # 0: no line search, 1: line search (only with LS objective ecc)
         codeoptions.sqp_nlp.TolStat = 1e-3 # Tolerance on stationarity
         codeoptions.sqp_nlp.TolEq = 1e-3 # Tolerance on equality constraints
+        codeoptions.sqp_nlp.reg_hessian = 1e-6
+        # codeoptions.sqp_nlp.qpinit = 0 # 0: cold start, 1: centered
+        # codeoptions.sqp_nlp.qp_method = 'general' # (??)
+        # codeoptions.sqp_nlp.use_diagonal_hessian = -1 # (???)
+        #codeoptions.sqp_nlp.autotune = 1 #  (???)
+        # # also there are some 
+        # codeoptions.sqp_nlp.tuning.qp_tuning.tuning0 = None
+        # codeoptions.sqp_nlp.tuning.qp_tuning.tuning1 = None
+        # codeoptions.sqp_nlp.tuning.qp_tuning.tuning2 = None
+        # codeoptions.sqp_nlp.tuning.qp_tuning.tuning3 = None
 
-        # set warm start behaviour for dual variables (so always warm start from solver perspective, even if in practice you give it a vector of zeros)
-        codeoptions.init = 2  # 0 cold, 1 centered, 2 warm
-
-        #set overwrite behviour
-        codeoptions.overwrite = 1 # 0 never, 1 always, 2 (Defaul) ask
-
-        codeoptions.solvemethod = 'SQP_NLP' # 'SQP_NLP' # 'PDIP_NLP' # changing to non linear primal dual method  'SQP_NLP'
-        # NOTE that by default the solver uses a single sqp iteration so you need to increase the number of iterations
-        #codeoptions.nlp.hessian_approximation = 'gauss-newton'
-        #codeoptions.solver_timeout = 1  # Set a 40 ms time limit we assume the controller rate is 20Hz but you need some time to do other things in the control loop
-        #codeoptions.solver_exit_external = 1
-        codeoptions.sqp_nlp.maxqps = 3
-        #codeoptions.sqp_nlp.maxSQPit = 10  # this seems to do nothing
-        #codeoptions.sqp_nlp.reg_hessian = 1e-3  # regularization of hessian (default is 5 * 10^(-9))
-        #codeoptions.sqp_nlp.use_line_search = False  # Enable line search (default)
+        
  
 
-        codeoptions.parallel = 1 # this doesn't really do much
+        
 
 
         return model,codeoptions

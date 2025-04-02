@@ -23,7 +23,7 @@ class set_up_GUI_optuna(): # inherits from DART system identification
         GUI_mpc_node.update_configuration({"qt_rot_high": 10})
         if single_layer_tag:
             GUI_mpc_node.update_configuration({"single_layer": True})
-            GUI_mpc_node.update_configuration({"V_target": 3}) # this is actually not used in the solver but only for the path params
+            GUI_mpc_node.update_configuration({"V_target": 2}) # this is actually not used in the solver but only for the path params
             single_layer_name = 'SINGLE_layer_'
         else:
             GUI_mpc_node.update_configuration({"single_layer": False})

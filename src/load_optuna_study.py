@@ -52,8 +52,8 @@ print("Best parameters:", study.best_params)
 print("Best value:", study.best_value)
 
 # visualize the optimization history
-optuna.visualization.plot_optimization_history(study).show()
-optuna.visualization.plot_param_importances(study).show()
+#optuna.visualization.plot_optimization_history(study).show()
+#optuna.visualization.plot_param_importances(study).show()
 
 
 

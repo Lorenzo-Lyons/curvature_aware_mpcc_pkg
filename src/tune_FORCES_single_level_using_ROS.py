@@ -56,9 +56,9 @@ def set_mpc_node_GUI(trial,GUI_mpc_node):
     # generate parameters for optuna study
     # #local_path_length,       q_con,      q_u,     q_acc,     qt_pos_high,      qt_rot_high,    lane_width,        qt_s_high,  q_v, labels_k
     q_con = trial.suggest_float("q_con", 0.001, 1, log=True)
-    q_v = trial.suggest_float("q_v", 0.001, 0.2, log=True)
-    q_u = trial.suggest_float("q_u", 0.001, 0.2, log=True)
-    q_acc = trial.suggest_float("q_acc", 0.001, 0.2, log=True)
+    q_v = trial.suggest_float("q_v", 0.05, 0.5, log=True)
+    q_u = trial.suggest_float("q_u", 0.05, 0.5, log=True)
+    q_acc = trial.suggest_float("q_acc", 0.05, 0.5, log=True)
 
 
     # set GUI parameters
