@@ -1274,8 +1274,16 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         weights_st_solver[np.abs(weights_st_solver) < threshold] = 0
 
         # assign to self
-        self.weights_th_FIR_solver = weights_th_solver
-        self.weights_st_FIR_solver = weights_st_solver
+        self.weights_th_FIR_solver = weights_th_solver[:-1] / np.sum(weights_th_solver[:-1]) # skip last value that will be 0 (this was needed to interpolate correctly)
+        self.weights_st_FIR_solver = weights_st_solver[:-1] / np.sum(weights_st_solver[:-1])
+
+        # # # #  VERY TEMPORARY for debugging
+        # # print('TEMPORARY: setting weights to 0 except for the first element')
+        # # # replace with zeros except a one for the first element
+        # # self.weights_th_FIR_solver = np.zeros_like(self.weights_th_FIR_solver)
+        # # self.weights_st_FIR_solver = np.zeros_like(self.weights_st_FIR_solver)
+        # # self.weights_th_FIR_solver[2] = 1
+        # # self.weights_st_FIR_solver[2] = 1
 
 
 
@@ -1363,6 +1371,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
     def produce_FORCES_model_codeoptions(self):
         import forcespro.nlp
 
+
         model = forcespro.nlp.SymbolicModel(self.N+1) # this plus one is to keep the same output dimensions as the acados model that has 1 extra state
 
         model.xinitidx = np.array(range(self.nu,self.nu + self.nx))  # variables in these positions are affected by initial state constraint. (I.e. they cannot change in the first stage)
@@ -1389,6 +1398,8 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
         # Set dynamic constraint
         if self.actuator_dynamics:
+            self.discrete_dynamics_intermediate_shooting_vehicle = 10
+            self.discrete_dynamics_intermediate_shooting_path = 4
             model.eq = self.single_layer_discrete_dynamics_actuators_forces
         else:
             model.continuous_dynamics = self.single_layer_planner_continous_dynamics_forces
@@ -1639,6 +1650,40 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
             print('')
             print('Dynamic_constraint: Invalid dynamic model setting')
 
+        # s_star = s / local_path_length # normalize s
+
+        # K_x_star = K_matern2_kernel(s_star, self.normalized_s_4_kernel_path,
+        #                         self.path_lengthscale,1,self.n_points_kernelized)      
+        # left_side = K_x_star @ self.Kxx_inv
+        # k = left_side @ labels_k
+
+        # # s_dot definition depending on the selected algorithm
+        # # for now we assume vy is small
+        # v_tan = vx * cos(yaw - ref_heading)
+        # p = (pos_x - ref_x) * sin(ref_heading)  + (pos_y - ref_y) * -cos(ref_heading)
+        # den_corrected = self.soft_min(1+p*k,0.3)
+        # projection_ratio = 1 / den_corrected
+        # s_dot = v_tan * projection_ratio
+
+        # # forwards integrate the reference path
+        # x_ref_dot = s_dot * cos(ref_heading) 
+        # y_ref_dot = s_dot * sin(ref_heading)
+        # ref_heading_dot = k * s_dot
+        s_dot,x_ref_dot,y_ref_dot,ref_heading_dot = self.kernelized_path_derivatives(local_path_length,labels_k,s,ref_x,ref_y,ref_heading,vx,yaw,pos_x,pos_y)
+
+
+
+        # state is  pos_x, pos_y,  yaw,    vx,     vy,     w,      s,     ref_x,     ref_y,     ref_heading 
+        state_dot = [x_dot,y_dot, yaw_dot, vx_dot, vy_dot, w_dot,  s_dot ,x_ref_dot, y_ref_dot, ref_heading_dot]
+        return state_dot
+    
+    def kernelized_path_derivatives(self,local_path_length,labels_k,s,ref_x,ref_y,ref_heading,vx,yaw,pos_x,pos_y):
+        if isinstance(s, casadi.MX) or isinstance(s, casadi.SX):
+            cos = casadi.cos
+            sin = casadi.sin
+        else:
+            cos = np.cos
+            sin = np.sin
         s_star = s / local_path_length # normalize s
 
         K_x_star = K_matern2_kernel(s_star, self.normalized_s_4_kernel_path,
@@ -1659,11 +1704,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         y_ref_dot = s_dot * sin(ref_heading)
         ref_heading_dot = k * s_dot
 
-
-
-        # state is  pos_x, pos_y,  yaw,    vx,     vy,     w,      s,     ref_x,     ref_y,     ref_heading 
-        state_dot = [x_dot,y_dot, yaw_dot, vx_dot, vy_dot, w_dot,  s_dot ,x_ref_dot, y_ref_dot, ref_heading_dot]
-        return state_dot
+        return s_dot,x_ref_dot,y_ref_dot,ref_heading_dot
     
 
     def SVGP_continuous_dynamics(self,th_input,st_input,vx,vy,w,yaw,use_nominal_model):
@@ -1721,16 +1762,66 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         return self.single_layer_continous_dynamics(local_path_length,labels_k,
                                                     th_input,st_input,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading)
     
+
+
+    
+
+    # # def single_layer_discrete_dynamics_actuators_forces(self,z, p):
+    # #     #z = casadi.vertcat(u, x)
+    # #     th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(z)
+    # #     local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
+
+    # #     # evaluate the th and st using FIR response
+    # #     th_4_model,st_4_model,th_past_next,st_past_next = self.act_dynamics(th_input,st_input,th_past, st_past)
+
+    # #     u = casadi.vertcat(th_input,st_input,slack)  # TEMP DEBUGGING
+    # #     x = casadi.vertcat(pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past)
+
+    # #     import forcespro
+    # #     dt_solver = self.time_horizon / self.N
+    # #     x_next_state = forcespro.nlp.integrate(self.single_layer_planner_continous_dynamics_forces_4_integrator, x, u, p,
+    # #                                         integrator=forcespro.nlp.integrators.RK4,
+    # #                                         stepsize=dt_solver)
+    # #     # unpack the new state
+    # #     pos_x_next = x_next_state[0]
+    # #     pos_y_next = x_next_state[1]
+    # #     yaw_next = x_next_state[2]
+    # #     vx_next = x_next_state[3]
+    # #     vy_next = x_next_state[4]
+    # #     w_next = x_next_state[5]
+    # #     s_next = x_next_state[6]
+    # #     ref_x_next = x_next_state[7]
+    # #     ref_y_next = x_next_state[8]
+    # #     ref_heading_next = x_next_state[9]
+
+    # #     # assemble new state
+    # #     x_next = casadi.vertcat(pos_x_next,
+    # #                             pos_y_next,
+    # #                             yaw_next,
+    # #                             vx_next,
+    # #                             vy_next,
+    # #                             w_next,
+    # #                             s_next,
+    # #                             ref_x_next,
+    # #                             ref_y_next,
+    # #                             ref_heading_next,
+    # #                             th_past_next,
+    # #                             st_past_next)
+    # #     return x_next
+
+
     def single_layer_discrete_dynamics_actuators_forces(self,z, p):
         #z = casadi.vertcat(u, x)
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
+
         return self.single_layer_discrete_dynamics_with_actuators(local_path_length,labels_k,
                                                     th_input,st_input,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past)
 
 
-    def single_layer_discrete_dynamics_with_actuators(self,local_path_length,labels_k,
-                                                    th_input,st_input,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past):
+
+
+    def act_dynamics(self,th_input,st_input,th_past, st_past):
         # evaluate the th and st 
         th_4_model = th_input * self.weights_th_FIR_solver[0] + \
                     np.expand_dims(self.weights_th_FIR_solver[1:],0) @ th_past 
@@ -1741,35 +1832,54 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         th_past_next = casadi.vertcat(th_input,th_past[1:])
         st_past_next = casadi.vertcat(st_input,st_past[1:])
 
+        return th_4_model,st_4_model,th_past_next,st_past_next
+
+
+
+
+    def single_layer_discrete_dynamics_with_actuators(self,local_path_length,labels_k,
+                                                    th_input,st_input,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past):
+        # evaluate the dynamics with the FIR-based actions
+        th_4_model,st_4_model,th_past_next,st_past_next = self.act_dynamics(th_input,st_input,th_past, st_past)
+
         # now evaluate the dynamics with the FIR-based actions
-        x_dot = self.single_layer_continous_dynamics(local_path_length,labels_k,
-                                                    th_input,st_input,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading)
-        
-        # integrating with simple Euler
         dt_solver = self.time_horizon / self.N
-        # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_pas
-        pos_x_next = pos_x + x_dot[0] * dt_solver
-        pos_y_next = pos_y + x_dot[1] * dt_solver
-        yaw_next = yaw + x_dot[2] * dt_solver
-        vx_next = vx + x_dot[3] * dt_solver
-        vy_next = vy + x_dot[4] * dt_solver
-        w_next = w + x_dot[5] * dt_solver
-        s_next = s + x_dot[6] * dt_solver
-        ref_x_next = ref_x + x_dot[7] * dt_solver
-        ref_y_next = ref_y + x_dot[8] * dt_solver
-        ref_heading_next = ref_heading + x_dot[9] * dt_solver
+        dt_vehicle = dt_solver / self.discrete_dynamics_intermediate_shooting_vehicle
+        
+        for _ in range(self.discrete_dynamics_intermediate_shooting_vehicle):
+            
+            pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_input,st_input,vx,vy,w,yaw)
+            # integrating with simple Euler
+            # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_pas
+            pos_x = pos_x + pos_x_dot * dt_vehicle
+            pos_y = pos_y + pos_y_dot * dt_vehicle
+            yaw = yaw + yaw_dot * dt_vehicle
+            vx = vx + vx_dot * dt_vehicle
+            vy = vy + vy_dot * dt_vehicle
+            w = w + w_dot * dt_vehicle
+
+
+        # update other states
+        dt_path = dt_solver / self.discrete_dynamics_intermediate_shooting_path
+        for _ in range(self.discrete_dynamics_intermediate_shooting_path):
+            s_dot,x_ref_dot,y_ref_dot,ref_heading_dot = self.kernelized_path_derivatives(local_path_length,labels_k,s,ref_x,ref_y,ref_heading,vx,yaw,pos_x,pos_y)
+            s = s + s_dot * dt_path
+            ref_x = ref_x + x_ref_dot * dt_path
+            ref_y = ref_y + y_ref_dot * dt_path
+            ref_heading = ref_heading + ref_heading_dot * dt_path
+
 
         # assemble new state
-        x_next = casadi.vertcat(pos_x_next,
-                                pos_y_next,
-                                yaw_next,
-                                vx_next,
-                                vy_next,
-                                w_next,
-                                s_next,
-                                ref_x_next,
-                                ref_y_next,
-                                ref_heading_next,
+        x_next = casadi.vertcat(pos_x,
+                                pos_y,
+                                yaw,
+                                vx,
+                                vy,
+                                w,
+                                s,
+                                ref_x,
+                                ref_y,
+                                ref_heading,
                                 th_past_next,
                                 st_past_next)
         return x_next

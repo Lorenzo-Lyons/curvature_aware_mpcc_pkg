@@ -960,6 +960,12 @@ class MPCC_controller_class(path_handeling_utilities_class):
             # initialize past actions
             n_th_past_actions = self.single_layer_solver_generator_obj.weights_th_FIR_solver.shape[0] -1
             n_st_past_actions = self.single_layer_solver_generator_obj.weights_st_FIR_solver.shape[0] -1
+
+            # print values
+            #print('n_th_past_actions:',self.th_past_actions[:n_th_past_actions])
+            #print('n_st_past_actions:',self.st_past_actions[:n_st_past_actions])
+
+
             past_th_st = [*self.th_past_actions[:n_th_past_actions],*self.st_past_actions[:n_st_past_actions]]
             xinit[10:] = past_th_st
 
