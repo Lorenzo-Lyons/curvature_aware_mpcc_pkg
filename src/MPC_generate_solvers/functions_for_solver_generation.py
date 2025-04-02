@@ -1204,7 +1204,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
 
         self.n_parameters = 9 + self.n_points_kernelized
-        self.n_inequality_constraints = 3 # non linear inequality constraints
+        self.n_inequality_constraints = 1 # non linear inequality constraints
 
         # set operational limits on the centrifugal force
         #self.max_centrifugal_force = 30 #6.5 # m/s^2
@@ -1399,8 +1399,8 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # Set non linear constraints
         model.nh = self.n_inequality_constraints
         model.ineq = self.non_lin_constraint_forces
-        model.hl = np.zeros(3)   #np.array([0.0,0.0,0.0])
-        model.hu = np.ones(3)*np.infty  #np.array([1000.0,1000.0,1000.0])  # upper bound on inequality constraints
+        model.hl = np.zeros(self.n_inequality_constraints)   #np.array([0.0,0.0,0.0])
+        model.hu = np.ones(self.n_inequality_constraints)*np.infty  #np.array([1000.0,1000.0,1000.0])  # upper bound on inequality constraints
         
         # Define solver options
         codeoptions = forcespro.CodeOptions('FORCESNLPsolver') #get standard options
@@ -1795,13 +1795,14 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
         h1 = vx*slope - w_constr + w0 + slack
         h2 = vx*slope + w_constr + w0 + slack
-        return [1,1]
+        return [h1,h2]
 
 
     def non_lin_constraint_forces(self,z, p):
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
-        return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width),*self.max_centrifugal_force_constraint(vx,w,slack,st_input)]
+        # ,*self.max_centrifugal_force_constraint(vx,w,slack,st_input)
+        return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width)]
 
 
 
