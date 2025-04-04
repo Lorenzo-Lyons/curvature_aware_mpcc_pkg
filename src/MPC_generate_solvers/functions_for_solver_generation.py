@@ -1285,6 +1285,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # # self.weights_th_FIR_solver[2] = 1
         # # self.weights_st_FIR_solver[2] = 1
 
+        # to check at solver build time that the weights are correct
+        print('loaded actuator dynamics parameters')
+        print('throttle FIR weights: ', self.weights_th_FIR_solver)
+        print('steering FIR weights: ', self.weights_st_FIR_solver)
+
 
 
 
@@ -1397,14 +1402,22 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
     
 
         # Set dynamic constraint
-        if self.actuator_dynamics:
-            self.discrete_dynamics_intermediate_shooting_vehicle = 10
-            self.discrete_dynamics_intermediate_shooting_path = 4
-            model.eq = self.single_layer_discrete_dynamics_actuators_forces
-        else:
-            model.continuous_dynamics = self.single_layer_planner_continous_dynamics_forces
+        #if self.actuator_dynamics:
+        #if self.dynamic_model == "kinematic_bicycle" or self.dynamic_model =="dynamic_bicycle":
+        self.discrete_dynamics_intermediate_shooting_vehicle = 10
+        # elif self.dynamic_model == "dynamic_bicycle_GP":
+        #     self.discrete_dynamics_intermediate_shooting_vehicle = 1 
 
-        
+        self.discrete_dynamics_intermediate_shooting_path = 4
+
+        print('discrete dynamics will be integrated with forward Euler with intermediate shooting nodes')
+        print('discrete_dynamics_intermediate_shooting_vehicle: ', self.discrete_dynamics_intermediate_shooting_vehicle)
+        print('discrete_dynamics_intermediate_shooting_path: ', self.discrete_dynamics_intermediate_shooting_path)
+        model.eq = self.single_layer_discrete_dynamics_forces
+        # else:
+        #     model.continuous_dynamics = self.single_layer_planner_continous_dynamics_forces
+
+
 
     
         # Set non linear constraints
@@ -1713,30 +1726,9 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         mean_x, mean_y, mean_w = self.SVGP_unified_analytic_obj.predictive_mean_only(x_star)
         
         if use_nominal_model:
-            #evaluate steering angle 
-            steering_angle = self.steering_2_steering_angle(st_input,self.a_s_self,self.b_s_self,self.c_s_self,self.d_s_self,self.e_s_self)
+            # use the nominal model Dynamic bicycle
+            acc_x_dyn_bike,acc_y_dyn_bike,acc_w_dyn_bike = self.dynamic_bicycle(th_input, st_input, vx, vy, w )
 
-            # # evaluate longitudinal forces
-            Fx_wheels = self.motor_force(th_input,vx,self.a_m_self,self.b_m_self,self.c_m_self)\
-                        + self.rolling_friction(vx,self.a_f_self,self.b_f_self,self.c_f_self,self.d_f_self)\
-                        + self.F_friction_due_to_steering(steering_angle,vx,self.a_stfr_self,self.b_stfr_self,self.d_stfr_self,self.e_stfr_self)
-
-            c_front = (self.m_front_wheel_self)/self.m_self
-            c_rear = (self.m_rear_wheel_self)/self.m_self
-
-            # redistribute Fx to front and rear wheels according to normal load
-            Fx_front = Fx_wheels * c_front
-            Fx_rear = Fx_wheels * c_rear
-
-            #evaluate slip angles
-            alpha_f,alpha_r = self.evaluate_slip_angles(vx,vy,w,self.lf_self,self.lr_self,steering_angle)
-
-            #lateral forces
-            Fy_wheel_f = self.lateral_tire_force(alpha_f,self.d_t_f_self,self.c_t_f_self,self.b_t_f_self,self.m_front_wheel_self)
-            Fy_wheel_r = self.lateral_tire_force(alpha_r,self.d_t_r_self,self.c_t_r_self,self.b_t_r_self,self.m_rear_wheel_self)
-
-            acc_x_dyn_bike,acc_y_dyn_bike,acc_w_dyn_bike = self.solve_rigid_body_dynamics(vx,vy,w,steering_angle,Fx_front,Fx_rear,Fy_wheel_f,Fy_wheel_r,self.lf_self,self.lr_self,self.m_self,self.Jz_self)
-            
             acc_x = mean_x + acc_x_dyn_bike
             acc_y = mean_y + acc_y_dyn_bike
             acc_w = mean_w + acc_w_dyn_bike
@@ -1766,7 +1758,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
     
 
-    # # def single_layer_discrete_dynamics_actuators_forces(self,z, p):
+    # # def single_layer_discrete_dynamics_forces(self,z, p):
     # #     #z = casadi.vertcat(u, x)
     # #     th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(z)
     # #     local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
@@ -1810,12 +1802,12 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
     # #     return x_next
 
 
-    def single_layer_discrete_dynamics_actuators_forces(self,z, p):
+    def single_layer_discrete_dynamics_forces(self,z, p):
         #z = casadi.vertcat(u, x)
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
 
-        return self.single_layer_discrete_dynamics_with_actuators(local_path_length,labels_k,
+        return self.single_layer_discrete_dynamics(local_path_length,labels_k,
                                                     th_input,st_input,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past)
 
 
@@ -1837,18 +1829,42 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
 
 
-    def single_layer_discrete_dynamics_with_actuators(self,local_path_length,labels_k,
+    def single_layer_discrete_dynamics(self,local_path_length,labels_k,
                                                     th_input,st_input,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past):
-        # evaluate the dynamics with the FIR-based actions
-        th_4_model,st_4_model,th_past_next,st_past_next = self.act_dynamics(th_input,st_input,th_past, st_past)
-
-        # now evaluate the dynamics with the FIR-based actions
-        dt_solver = self.time_horizon / self.N
-        dt_vehicle = dt_solver / self.discrete_dynamics_intermediate_shooting_vehicle
         
+        
+        # now evaluate the dynamics with the FIR-based actions
+        if self.actuator_dynamics:
+            # evaluate the dynamics with the FIR-based actions
+            th_4_model,st_4_model,th_past_next,st_past_next = self.act_dynamics(th_input,st_input,th_past, st_past)
+        else:
+            th_4_model = th_input
+            st_4_model = st_input
+
+        # time step for the solver
+        dt_solver = self.time_horizon / self.N
+
+        # --- vehicle dynamics constraint ---
+        dt_vehicle = dt_solver / self.discrete_dynamics_intermediate_shooting_vehicle
         for _ in range(self.discrete_dynamics_intermediate_shooting_vehicle):
+            if self.dynamic_model == "kinematic_bicycle":
+                pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.kinematic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,yaw)
+            elif self.dynamic_model == "dynamic_bicycle":
+                pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)
+            elif self.dynamic_model == "dynamic_bicycle_GP": # 
+                # pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,
+                #                                                                             self.SVGP_unified_analytic_obj.use_nominal_model.item())
+                #evaluate GP contribution
+                if self.SVGP_unified_analytic_obj.use_nominal_model.item():    
+                    pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)                                                                     
+                else:
+                    pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = 0,0,0,0,0,0 # null dynamics
+                
+            else:
+                print('')
+                print('Dynamic_constraint: Invalid dynamic model setting')
             
-            pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_input,st_input,vx,vy,w,yaw)
+            #pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)
             # integrating with simple Euler
             # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_pas
             pos_x = pos_x + pos_x_dot * dt_vehicle
@@ -1857,6 +1873,18 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
             vx = vx + vx_dot * dt_vehicle
             vy = vy + vy_dot * dt_vehicle
             w = w + w_dot * dt_vehicle
+
+        # forwards integrate the GP only onece
+        if self.dynamic_model == "dynamic_bicycle_GP":
+            x_star = casadi.horzcat(th_4_model,st_4_model,vx,vy,w)
+            vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_unified_analytic_obj.predictive_mean_only(x_star)
+            #pos_x_dot_GP, pos_y_dot_GP, yaw_dot_GP, vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,False) # not using dynamic model again so set it to false
+            #pos_x = pos_x + pos_x_dot_GP * dt_solver
+            #pos_y = pos_y + pos_y_dot_GP * dt_solver
+            #yaw = yaw + yaw_dot_GP * dt_solver
+            vx = vx + vx_dot_GP * dt_solver
+            vy = vy + vy_dot_GP * dt_solver
+            w = w + w_dot_GP * dt_solver
 
 
         # update other states
@@ -1879,7 +1907,9 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
                                 s,
                                 ref_x,
                                 ref_y,
-                                ref_heading,
+                                ref_heading)
+        if self.actuator_dynamics:
+            x_next = casadi.vertcat(x_next,
                                 th_past_next,
                                 st_past_next)
         return x_next

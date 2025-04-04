@@ -48,7 +48,7 @@ class MPC_GUI_manager:
         self.vehicles_list = vehicles_list
         self.solver_software_options = ['ACADOS' , 'FORCES']
         self.MPC_algorithm_options = ['MPCC', 'CAMPCC','MPCC_PP']
-        self.dynamic_model_options = ['kinematic_bicycle', 'dynamic_bicycle']
+        self.dynamic_model_options = ['kinematic_bicycle', 'dynamic_bicycle', 'dynamic_bicycle_GP']
 
         # as a last thing creat the server because it will be locked executing here
         srv = Server(GUI_mpc_dynamic_reconfigureConfig, self.reconfig_callback)
@@ -267,13 +267,14 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.x_y_yaw_state = [0, 0, 0] 
         self.pose_msg_time = rospy.get_rostime() # initialize time of pose message
 
+
         self.th_past_actions = np.zeros(40) # this can be a large number so that the mpc node will have enough (this is set in the mpc solver build)
         self.st_past_actions = np.zeros(40) 
 
 
         # delay compensation if in the lab
         self.delay_compensation = True
-        self.delay = 0.03 * 0.5 # communication delay in seconds (in the lab) 0.04
+        self.delay = 0.03 * 0.5 # communication delay in seconds (in the lab) 0.04  (IT WILL be overwritten if the delay estimation node is running)
         # set p contingency if solver does not converge
         self.last_converged_high = True
         self.last_converged_low = True
@@ -364,6 +365,9 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.comptime_publisher = rospy.Publisher('comptime_' + str(car_number), Float32, queue_size=1)
         self.mpc_throttle_publisher = rospy.Publisher('throttle_3timestamps_' + str(car_number), ThreeTimeStampsFloat32, queue_size=1)
         self.mpc_steering_publisher = rospy.Publisher('steering_3timestamps_' + str(car_number), ThreeTimeStampsFloat32, queue_size=1)
+
+        # subscribe to comm delay
+        self.comm_delay_subscriber = rospy.Subscriber('commdelay_laptop_2_car_' + str(car_number), Float32, self.comm_delay_subscriber_callback)
 
 
 
@@ -964,8 +968,6 @@ class MPCC_controller_class(path_handeling_utilities_class):
             # print values
             #print('n_th_past_actions:',self.th_past_actions[:n_th_past_actions])
             #print('n_st_past_actions:',self.st_past_actions[:n_st_past_actions])
-
-
             past_th_st = [*self.th_past_actions[:n_th_past_actions],*self.st_past_actions[:n_st_past_actions]]
             xinit[10:] = past_th_st
 
@@ -1425,6 +1427,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         # update the pose
         # if delay compensation is used, forward propagate the current state into the future
         if self.delay_compensation:
+            #print('delay=',self.delay)
             #determine absolute velocities
             self.x_y_yaw_state = [msg.pose.pose.position.x + vx_abs * self.delay,
                                     msg.pose.pose.position.y+ vy_abs * self.delay,
@@ -1442,7 +1445,9 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.vy_publisher.publish(Float32(self.vy))
         self.w_publisher.publish(Float32(self.omega))
         
-
+    def comm_delay_subscriber_callback(self,msg):
+        # update the delay value
+        self.delay = msg.data
 
 
 
