@@ -1200,11 +1200,12 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
             
 
 
-
-
-
         self.n_parameters = 9 + self.n_points_kernelized
-        self.n_inequality_constraints = 1 # non linear inequality constraints
+        # if self.dynamic_model == "dynamic_bicycle_GP":
+        #     self.n_inequality_constraints = 1 # no need for max centrifugal force
+        # else:
+        #     self.n_inequality_constraints = 3
+        self.n_inequality_constraints = 3
 
         # set operational limits on the centrifugal force
         #self.max_centrifugal_force = 30 #6.5 # m/s^2
@@ -1404,14 +1405,16 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # Set dynamic constraint
         #if self.actuator_dynamics:
         #if self.dynamic_model == "kinematic_bicycle" or self.dynamic_model =="dynamic_bicycle":
-        self.discrete_dynamics_intermediate_shooting_vehicle = 10
+        self.discrete_dynamics_intermediate_shooting_vehicle = 8
         # elif self.dynamic_model == "dynamic_bicycle_GP":
         #     self.discrete_dynamics_intermediate_shooting_vehicle = 1 
+        self.discrete_dynamics_intermediate_shooting_vehicle_GP = 1
 
-        self.discrete_dynamics_intermediate_shooting_path = 4
+        self.discrete_dynamics_intermediate_shooting_path = 3
 
         print('discrete dynamics will be integrated with forward Euler with intermediate shooting nodes')
         print('discrete_dynamics_intermediate_shooting_vehicle: ', self.discrete_dynamics_intermediate_shooting_vehicle)
+        print('discrete_dynamics_intermediate_shooting_vehicle_GP: ', self.discrete_dynamics_intermediate_shooting_vehicle_GP)
         print('discrete_dynamics_intermediate_shooting_path: ', self.discrete_dynamics_intermediate_shooting_path)
         model.eq = self.single_layer_discrete_dynamics_forces
         # else:
@@ -1758,49 +1761,6 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
     
 
-    # # def single_layer_discrete_dynamics_forces(self,z, p):
-    # #     #z = casadi.vertcat(u, x)
-    # #     th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(z)
-    # #     local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
-
-    # #     # evaluate the th and st using FIR response
-    # #     th_4_model,st_4_model,th_past_next,st_past_next = self.act_dynamics(th_input,st_input,th_past, st_past)
-
-    # #     u = casadi.vertcat(th_input,st_input,slack)  # TEMP DEBUGGING
-    # #     x = casadi.vertcat(pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past)
-
-    # #     import forcespro
-    # #     dt_solver = self.time_horizon / self.N
-    # #     x_next_state = forcespro.nlp.integrate(self.single_layer_planner_continous_dynamics_forces_4_integrator, x, u, p,
-    # #                                         integrator=forcespro.nlp.integrators.RK4,
-    # #                                         stepsize=dt_solver)
-    # #     # unpack the new state
-    # #     pos_x_next = x_next_state[0]
-    # #     pos_y_next = x_next_state[1]
-    # #     yaw_next = x_next_state[2]
-    # #     vx_next = x_next_state[3]
-    # #     vy_next = x_next_state[4]
-    # #     w_next = x_next_state[5]
-    # #     s_next = x_next_state[6]
-    # #     ref_x_next = x_next_state[7]
-    # #     ref_y_next = x_next_state[8]
-    # #     ref_heading_next = x_next_state[9]
-
-    # #     # assemble new state
-    # #     x_next = casadi.vertcat(pos_x_next,
-    # #                             pos_y_next,
-    # #                             yaw_next,
-    # #                             vx_next,
-    # #                             vy_next,
-    # #                             w_next,
-    # #                             s_next,
-    # #                             ref_x_next,
-    # #                             ref_y_next,
-    # #                             ref_heading_next,
-    # #                             th_past_next,
-    # #                             st_past_next)
-    # #     return x_next
-
 
     def single_layer_discrete_dynamics_forces(self,z, p):
         #z = casadi.vertcat(u, x)
@@ -1851,6 +1811,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
                 pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.kinematic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,yaw)
             elif self.dynamic_model == "dynamic_bicycle":
                 pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)
+            
             elif self.dynamic_model == "dynamic_bicycle_GP": # 
                 # pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,
                 #                                                                             self.SVGP_unified_analytic_obj.use_nominal_model.item())
@@ -1876,15 +1837,18 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
         # forwards integrate the GP only onece
         if self.dynamic_model == "dynamic_bicycle_GP":
-            x_star = casadi.horzcat(th_4_model,st_4_model,vx,vy,w)
-            vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_unified_analytic_obj.predictive_mean_only(x_star)
-            #pos_x_dot_GP, pos_y_dot_GP, yaw_dot_GP, vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,False) # not using dynamic model again so set it to false
-            #pos_x = pos_x + pos_x_dot_GP * dt_solver
-            #pos_y = pos_y + pos_y_dot_GP * dt_solver
-            #yaw = yaw + yaw_dot_GP * dt_solver
-            vx = vx + vx_dot_GP * dt_solver
-            vy = vy + vy_dot_GP * dt_solver
-            w = w + w_dot_GP * dt_solver
+            dt_GP = dt_solver / self.discrete_dynamics_intermediate_shooting_vehicle_GP
+            for _ in range(self.discrete_dynamics_intermediate_shooting_vehicle_GP):
+                x_star = casadi.horzcat(th_4_model,st_4_model,vx,vy,w)
+                vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_unified_analytic_obj.predictive_mean_only(x_star)
+                # pos_x_dot_GP, pos_y_dot_GP, yaw_dot_GP, vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,True) # not using dynamic model again so set it to false
+                # pos_x = pos_x + pos_x_dot_GP * dt_GP
+                # pos_y = pos_y + pos_y_dot_GP * dt_GP
+                # yaw = yaw + yaw_dot_GP * dt_GP
+                #vx = vx + vx_dot_GP * dt_GP
+                vy = vy + vy_dot_GP * dt_GP
+                w = w + w_dot_GP * dt_GP
+
 
 
         # update other states
@@ -1931,10 +1895,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # vx = 2.5 --> w = -3.8 (observed point when car lifts wheels off the ground)
         slope = 3.8 / (2.5 - 4.6)
         w0 = - slope * 4.6
-        w0 = w0 * 0.5
+        #w0 = w0 * 1.1
 
         h1 = vx*slope - w_constr + w0 + slack
         h2 = vx*slope + w_constr + w0 + slack
+
         return [h1,h2]
 
 
@@ -1942,7 +1907,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
         # ,*self.max_centrifugal_force_constraint(vx,w,slack,st_input)
-        return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width)]
+        # if self.dynamic_model == "dynamic_bicycle_GP":
+        #     # the GP doesn't need the centrifugal constraint cause the model is more precise
+        #     return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width)]
+        # else:
+        return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width),*self.max_centrifugal_force_constraint(vx,w,slack,st_input)]
 
 
 

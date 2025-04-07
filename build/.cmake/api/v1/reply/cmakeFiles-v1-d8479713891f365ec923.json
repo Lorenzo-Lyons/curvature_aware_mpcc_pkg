@@ -1281,6 +1281,10 @@
 			"path" : "build/catkin_generated/ordered_paths.cmake"
 		},
 		{
+			"isExternal" : true,
+			"path" : "/opt/ros/noetic/share/dynamic_reconfigure/cmake/setup_custom_pythonpath.sh.in"
+		},
+		{
 			"isCMake" : true,
 			"isExternal" : true,
 			"path" : "/usr/share/cmake-3.16/Modules/FindPythonInterp.cmake"

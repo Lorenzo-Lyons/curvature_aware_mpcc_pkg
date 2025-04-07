@@ -18,7 +18,7 @@ class republish_inputs:
         self.pub_steering = rospy.Publisher('steering_complete_stamp_' + str(car_number), ThreeTimeStampsFloat32, queue_size=1)
 
         self.comm_delay = 0
-        past_delays = 2
+        past_delays = 1
         self.past_delays_th = np.zeros(past_delays)
         self.past_delays_st = np.zeros(past_delays)
         self.publish_comm_delay = rospy.Publisher('commdelay_laptop_2_car_' + str(car_number), Float32, queue_size=1)

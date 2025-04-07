@@ -337,7 +337,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         # set up publishers for robot velocity estimates
         #set up past position variables
-        past_states = 2  # actually this is past states + 1 for current state
+        past_states = 2  # actually this is past states + 1 for current state  --- 2
         self.past_x_vicon = np.zeros(past_states)
         self.past_y_vicon = np.zeros(past_states)
         self.past_yaw_vicon = np.zeros(past_states)
@@ -437,7 +437,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         # produce Chebyshev coefficients that represent local path
         Ds_forward = 1.5 * V_target * self.high_level_solver_generator_obj.time_horizon #  self.dtt * self.high_level_solver_generator_obj.N
-        Ds_back = 0.0 # this is the length of the path that is behind the car
+        Ds_back = 0.5 # this is the length of the path that is behind the car
 
 
         if self.single_layer == False:
@@ -563,7 +563,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
             n = self.single_layer_solver_generator_obj.n_points_kernelized 
             labels_x,labels_y,labels_heading,labels_k,local_path_length,labels_s = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forward,xyyaw_ref_path,n)
             problem_single_layer = self.set_up_single_layer_solver_problem(pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega,
-                                           V_target, self.q_v,local_path_length,labels_k,labels_s)
+                                           V_target, self.q_v,local_path_length,labels_k,labels_s,Ds_back)
             
             start_solve_time = time.time()
             # call the high level solver
@@ -951,7 +951,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
     
 
     def set_up_single_layer_solver_problem(self,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega,
-                                           V_target, q_v,local_path_length,labels_k,labels_s):
+                                           V_target, q_v,local_path_length,labels_k,labels_s,Ds_back):
         # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
         xinit = np.zeros(self.single_layer_solver_generator_obj.nx) # all zeros
         xinit[0] = pos_x_init_rot
@@ -960,6 +960,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         xinit[3] = vx 
         xinit[4] = vy
         xinit[5] = omega
+        xinit[6] = Ds_back # s is the current position along the path
         if self.actuator_dynamics:
             # initialize past actions
             n_th_past_actions = self.single_layer_solver_generator_obj.weights_th_FIR_solver.shape[0] -1

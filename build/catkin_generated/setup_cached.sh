@@ -8,7 +8,10 @@
 
 # modified environment variables
 export CMAKE_PREFIX_PATH="/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/devel:$CMAKE_PREFIX_PATH"
+export LD_LIBRARY_PATH="/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/devel/lib:$LD_LIBRARY_PATH"
 export PATH='/opt/ros/noetic/bin:/home/lorenzo/.local/bin:/home/lorenzo/miniconda3/condabin:/home/lorenzo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin'
+export PKG_CONFIG_PATH="/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/devel/lib/pkgconfig:$PKG_CONFIG_PATH"
 export PWD='/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build'
+export PYTHONPATH="/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/devel/lib/python3/dist-packages:$PYTHONPATH"
 export ROSLISP_PACKAGE_DIRECTORIES="/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/devel/share/common-lisp:$ROSLISP_PACKAGE_DIRECTORIES"
 export ROS_PACKAGE_PATH="/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg:$ROS_PACKAGE_PATH"
