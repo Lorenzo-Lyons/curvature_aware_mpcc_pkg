@@ -1963,16 +1963,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 class generate_single_layer_MPCCPP(generate_single_layer_CAMPCC): # in the end inherits from DART system identification
     # here we need the dynamic constraints of teh low level controller
 
-    def __init__(self,dynamic_model,actuator_dynamics,path_2_actuator_dynamics,GP_params_folder):
+    def __init__(self,dynamic_model,GP_params_folder):
         self.dynamic_model = dynamic_model
-        self.actuator_dynamics = actuator_dynamics
-        if actuator_dynamics:
-            actuator_dynamics_name_tag = '_act_dyn'
-        else:
-            actuator_dynamics_name_tag = ''
 
-        self.solver_name_acados = 'single_layer_acados_MPCCPP_' + dynamic_model + actuator_dynamics_name_tag
-        self.solver_name_forces = 'single_layer_forces_MPCCPP_' + dynamic_model + actuator_dynamics_name_tag
+        self.solver_name_acados = 'single_layer_acados_MPCCPP_' + dynamic_model
+        self.solver_name_forces = 'single_layer_forces_MPCCPP_' + dynamic_model
 
         self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
         self.time_horizon = 1.0 #1.5 * 0.5
@@ -1981,15 +1976,8 @@ class generate_single_layer_MPCCPP(generate_single_layer_CAMPCC): # in the end i
         self.nu = 4 # throttle, steering, sdot, slack
 
 
-        # if actuator dynamics are enabled we must add extra states
-        if actuator_dynamics:
-        # load the weights from the actuator dynamics saved parameters
-            self.load_actuator_dynamics(path_2_actuator_dynamics)
-            self.act_FIR_states = len(self.weights_th_FIR_solver) + len(self.weights_st_FIR_solver) - 2 # minus 2 because the last value is the input at time now (u)
-            self.nx = self.nx_base + self.act_FIR_states
-        # no need to add the FRI since it will be baked into the dynamics
-        else:
-            self.nx = self.nx_base
+
+        self.nx = self.nx_base
 
         if dynamic_model == "dynamic_bicycle_GP":
             from DART_dynamic_models.dart_dynamic_models import SVGP_unified_analytic
@@ -1997,15 +1985,15 @@ class generate_single_layer_MPCCPP(generate_single_layer_CAMPCC): # in the end i
             self.SVGP_unified_analytic_obj.load_parameters(GP_params_folder)
 
 
-        self.n_parameters = 9 + self.n_points_kernelized * 3
+        self.n_parameters = 11 + self.n_points_kernelized * 3
 
         self.n_inequality_constraints = 3
 
         from DART_dynamic_models.dart_dynamic_models import model_functions
         mf = model_functions()
 
-        self.u_l = np.array([-mf.c_m_self,-1, 0])
-        self.u_u = np.array([1.0,+1, 100])
+        self.u_l = np.array([-mf.c_m_self,-1, 0,0])
+        self.u_u = np.array([1.0,+1, 100, 100])
         # upper- lower bound on the states
         # pos_x ,pos_y, yaw, vx,    vy,  w,  s,    ref_x,ref_y,ref_heading
         #self.x_l = np.array([-1000,-1000,-1000,-100,    -100,  -100,-100,-1000,-1000,-1000])
@@ -2156,9 +2144,6 @@ class generate_single_layer_MPCCPP(generate_single_layer_CAMPCC): # in the end i
         print('discrete_dynamics_intermediate_shooting_vehicle_GP: ', self.discrete_dynamics_intermediate_shooting_vehicle_GP)
         print('discrete_dynamics_intermediate_shooting_path: ', self.discrete_dynamics_intermediate_shooting_path)
         model.eq = self.single_layer_discrete_dynamics_forces
-        # else:
-        #     model.continuous_dynamics = self.single_layer_planner_continous_dynamics_forces
-
 
 
     
@@ -2170,12 +2155,6 @@ class generate_single_layer_MPCCPP(generate_single_layer_CAMPCC): # in the end i
         
         # Define solver options
         codeoptions = forcespro.CodeOptions('FORCESNLPsolver') #get standard options
-
-        if self.actuator_dynamics == False:
-            # continuous dynamics options
-            codeoptions.nlp.integrator.type = 'ERK4' #'ERK4' #'ForwardEuler' #'ERK4' #'IRK2' # 'ForwardEuler' #
-            codeoptions.nlp.integrator.Ts = self.time_horizon / (self.N+1)
-            codeoptions.nlp.integrator.nodes = 2 # intermediate nodes for the integrator
 
 
         codeoptions.name = self.solver_name_forces
@@ -2296,7 +2275,127 @@ class generate_single_layer_MPCCPP(generate_single_layer_CAMPCC): # in the end i
     def objective_forces(self, z, p):
         th_input,st_input,s_dot,slack,pos_x,pos_y,yaw,vx,vy,w,s= self.unpack_state(z)
         local_path_length, q_con, q_lag, q_u, q_sdot, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v, labels_x, labels_y, labels_heading = self.unpack_parameters(p)
-        return self.objective(self,th_input,st_input,slack,s_dot,pos_x,pos_y,q_con,q_lag,q_u,vx,q_acc,q_v,s,local_path_length,labels_x,labels_y,labels_heading)
+        return self.objective(th_input,st_input,slack,s_dot,pos_x,pos_y,q_con,q_lag,q_u,vx,q_acc,q_v,s,local_path_length,labels_x,labels_y,labels_heading)
 
 
 
+    def objective_terminal_cost(self,yaw,pos_x,pos_y,qt_pos,qt_rot,s,local_path_length,labels_x, labels_y, labels_heading):
+        #produce x, y, heading of the path
+        s_star = s / local_path_length # normalize s
+        K_x_star = K_matern2_kernel(s_star, self.normalized_s_4_kernel_path,self.path_lengthscale,1,self.n_points_kernelized)      
+        left_side = K_x_star @ self.Kxx_inv
+        ref_x = left_side @ labels_x
+        ref_y = left_side @ labels_y
+        ref_heading = left_side @ labels_heading
+
+        # terminal cost
+        dot_direction = (np.cos(ref_heading) * np.cos(yaw)) + (np.sin(ref_heading) * np.sin(yaw)) # evaluate car angle relative to a straight path
+        misalignment = -dot_direction # incentivise alligning with the path
+        # higher penalty costs on v and path tracking, plus an dditional penalty for not alligning with the path at the end
+        err_pos_squared_t = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
+        j_term_pos =    qt_pos * err_pos_squared_t + \
+                        qt_rot * misalignment 
+        return j_term_pos
+    
+    def objective_terminal_forces(self, z, p):
+        th_input,st_input,s_dot,slack,pos_x,pos_y,yaw,vx,vy,w,s = self.unpack_state(z)
+        local_path_length, q_con, q_lag, q_u, q_sdot, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v, labels_x, labels_y, labels_heading = self.unpack_parameters(p)
+        return self.objective_terminal_cost(yaw,pos_x,pos_y,qt_pos,qt_rot,s,local_path_length,labels_x, labels_y, labels_heading)
+
+
+
+    def single_layer_discrete_dynamics(self,th_input,st_input,s_dot,pos_x,pos_y,yaw,vx,vy,w,s):
+        
+        th_4_model = th_input
+        st_4_model = st_input
+
+        # time step for the solver
+        dt_solver = self.time_horizon / self.N
+
+        # --- vehicle dynamics constraint ---
+        dt_vehicle = dt_solver / self.discrete_dynamics_intermediate_shooting_vehicle
+        for _ in range(self.discrete_dynamics_intermediate_shooting_vehicle):
+            if self.dynamic_model == "kinematic_bicycle":
+                pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.kinematic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,yaw)
+            elif self.dynamic_model == "dynamic_bicycle":
+                pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)
+            
+            elif self.dynamic_model == "dynamic_bicycle_GP": # 
+                # pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,
+                #                                                                             self.SVGP_unified_analytic_obj.use_nominal_model.item())
+                #evaluate GP contribution
+                if self.SVGP_unified_analytic_obj.use_nominal_model.item():    
+                    pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)                                                                     
+                else:
+                    pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = 0,0,0,0,0,0 # null dynamics
+                
+            else:
+                print('')
+                print('Dynamic_constraint: Invalid dynamic model setting')
+            
+            #pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)
+            # integrating with simple Euler
+            # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_pas
+            pos_x = pos_x + pos_x_dot * dt_vehicle
+            pos_y = pos_y + pos_y_dot * dt_vehicle
+            yaw = yaw + yaw_dot * dt_vehicle
+            vx = vx + vx_dot * dt_vehicle
+            vy = vy + vy_dot * dt_vehicle
+            w = w + w_dot * dt_vehicle
+
+        # forwards integrate the GP only onece
+        if self.dynamic_model == "dynamic_bicycle_GP":
+            dt_GP = dt_solver / self.discrete_dynamics_intermediate_shooting_vehicle_GP
+            for _ in range(self.discrete_dynamics_intermediate_shooting_vehicle_GP):
+                x_star = casadi.horzcat(th_4_model,st_4_model,vx,vy,w)
+                vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_unified_analytic_obj.predictive_mean_only(x_star)
+
+                vy = vy + vy_dot_GP * dt_GP
+                w = w + w_dot_GP * dt_GP
+
+        # update other states
+        dt_path = dt_solver / self.discrete_dynamics_intermediate_shooting_path
+        for _ in range(self.discrete_dynamics_intermediate_shooting_path):
+            s = s + s_dot * dt_path
+
+
+        # assemble new state
+        x_next = casadi.vertcat(pos_x,
+                                pos_y,
+                                yaw,
+                                vx,
+                                vy,
+                                w,
+                                s)
+
+        return x_next
+    
+
+    def single_layer_discrete_dynamics_forces(self,z, p):
+        #z = casadi.vertcat(u, x)
+        th_input,st_input,s_dot,slack,pos_x,pos_y,yaw,vx,vy,w,s = self.unpack_state(z)
+        local_path_length, q_con, q_lag, q_u, q_sdot, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v, labels_x, labels_y, labels_heading = self.unpack_parameters(p)
+        
+        return self.single_layer_discrete_dynamics(th_input,st_input,s_dot,pos_x,pos_y,yaw,vx,vy,w,s)
+
+    def non_lin_constraint_forces(self,z, p):
+        th_input,st_input,s_dot,slack,pos_x,pos_y,yaw,vx,vy,w,s = self.unpack_state(z)
+        local_path_length, q_con, q_lag, q_u, q_sdot, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v, labels_x, labels_y, labels_heading = self.unpack_parameters(p)
+        
+        return [self.lane_boundary_constraint(pos_x,pos_y,s,slack,lane_width,local_path_length,labels_x, labels_y, labels_heading),
+                *self.max_centrifugal_force_constraint(vx,w,slack,st_input)] # this one is the same as in the parent class single_layer_CAMPCC
+
+
+    def lane_boundary_constraint(self,pos_x,pos_y,s,slack,lane_width,local_path_length,labels_x, labels_y, labels_heading):
+        # produce the path relative quantities
+        # produce x, y, heading of the path
+        s_star = s / local_path_length # normalize s
+        K_x_star = K_matern2_kernel(s_star, self.normalized_s_4_kernel_path,self.path_lengthscale,1,self.n_points_kernelized)      
+        left_side = K_x_star @ self.Kxx_inv
+        ref_x = left_side @ labels_x
+        ref_y = left_side @ labels_y
+        ref_heading = left_side @ labels_heading
+
+        err_lat_squared = ((pos_x - ref_x) * -casadi.sin(ref_heading) + (pos_y - ref_y) * casadi.cos(ref_heading)) ** 2
+
+        return ((lane_width+slack)/2)**2 - err_lat_squared 
