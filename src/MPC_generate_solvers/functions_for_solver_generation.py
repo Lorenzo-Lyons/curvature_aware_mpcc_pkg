@@ -2399,3 +2399,74 @@ class generate_single_layer_MPCCPP(generate_single_layer_CAMPCC): # in the end i
         err_lat_squared = ((pos_x - ref_x) * -casadi.sin(ref_heading) + (pos_y - ref_y) * casadi.cos(ref_heading)) ** 2
 
         return ((lane_width+slack)/2)**2 - err_lat_squared 
+    
+
+    def produce_X0(self,V_target,local_path_length,labels_k,labels_s):
+        # V_target in this case is the estimated speed of the vehicle 
+
+        # Initial guess for state trajectory
+        X0_array = np.zeros((self.N+1,self.nu +  self.nx))
+        # 0        1        2     3     4     5   6  7   8  9  10 11
+        # th_input,st_input,s_dot,slack,pos_x,pos_y, yaw,vx,vy,w  ,s
+
+        # assign initial guess for the states by forward euler integration on th ereference path
+
+        # refinement for first guess needs to be higher because the forward euler is a bit lame
+        N_0 = 1000
+
+        s_0_vec = np.linspace(0, V_target * self.time_horizon, N_0+1)
+
+        # interpolate to get curvature values
+        #normalized_s_4_kernel_path = np.linspace(0.0, 1.0, self.n_points_kernelized)
+
+        s_star_0 = s_0_vec / local_path_length # normalize s
+        k_0_vals = np.interp(s_star_0, labels_s, labels_k)
+        x_ref_0 = np.zeros(N_0+1)
+        y_ref_0 = np.zeros(N_0+1)
+        ref_heading_0 = np.zeros(N_0+1)
+        dt = self.time_horizon / N_0
+        yaw_rate_0 = np.zeros(N_0+1)
+        for i in range(1,N_0+1):
+            x_ref_0[i] = x_ref_0[i-1] + V_target * dt * np.cos(ref_heading_0[i-1])
+            y_ref_0[i] = y_ref_0[i-1] + V_target * dt * np.sin(ref_heading_0[i-1])
+            ref_heading_0[i] = ref_heading_0[i-1] + k_0_vals[i-1] * V_target * dt
+
+            yaw_rate_0[i-1] = (ref_heading_0[i] - ref_heading_0[i-1] )/ dt
+
+        # get throttle value
+        throttle_search_vec = np.linspace(0,1,30)
+        # evalaute FX on the throttle search vec
+        Fx_wheels = + self.motor_force(throttle_search_vec,V_target,self.a_m_self,self.b_m_self,self.c_m_self)\
+                + self.rolling_friction(V_target,self.a_f_self,self.b_f_self,self.c_f_self,self.d_f_self)
+        acc_x =  Fx_wheels / self.m_self # evaluate to acceleration
+        #find the throttle that gives the closest acceleration to 0
+        throttle_0 = throttle_search_vec[np.argmin(np.abs(acc_x))]
+
+
+        # now down sample to the N points
+        s_0_vec = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), s_0_vec)
+        x_ref_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), x_ref_0)
+        y_ref_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), y_ref_0)
+        ref_heading_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), ref_heading_0)
+        yaw_rate_0 = np.interp(np.linspace(0,1,self.N+1), np.linspace(0,1,N_0+1), yaw_rate_0)
+
+
+        # assign values to the array
+        # 0        1        2     3      4     5      6   7   8   9   10
+        # th_input,st_input,s_dot,slack, pos_x,pos_y, yaw,vx, vy, w  ,s
+
+        X0_array[:,0] = throttle_0
+        X0_array[:,1] = 0 # steering is 0 for now
+        X0_array[:,2] = np.array([*np.diff(s_0_vec),np.diff(s_0_vec)[-1]]) / (self.time_horizon / self.N) # s_dot
+        X0_array[:,3] = 0 # slack variable should be zero
+        
+        X0_array[:,4] = x_ref_0 
+        X0_array[:,5] = y_ref_0
+        X0_array[:,6] = ref_heading_0
+        X0_array[:,7] = V_target
+        X0_array[:,8] = 0
+        X0_array[:,9] = yaw_rate_0
+        X0_array[:,10] = s_0_vec
+
+
+        return X0_array

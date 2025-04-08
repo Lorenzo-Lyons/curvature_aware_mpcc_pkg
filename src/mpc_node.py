@@ -27,7 +27,8 @@ from tf.transformations import euler_from_quaternion
 from MPC_generate_solvers.functions_for_solver_generation import    generate_high_level_path_planner_ocp,\
                                                                     generate_low_level_solver_ocp,\
                                                                     generate_high_level_MPCC_PP,\
-                                                                    generate_single_layer_CAMPCC
+                                                                    generate_single_layer_CAMPCC,\
+                                                                    generate_single_layer_MPCCPP
 
 
 # TODO
@@ -437,15 +438,16 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         # produce Chebyshev coefficients that represent local path
         Ds_forward = 1.5 * V_target * self.high_level_solver_generator_obj.time_horizon #  self.dtt * self.high_level_solver_generator_obj.N
-        Ds_back = 0.5 # this is the length of the path that is behind the car
+        Ds_back = 0.0 # do NOT change
+
+        pos_x_init_rot, pos_y_init_rot, yaw_init_rot,xyyaw_ref_path = self.relative_xyyaw_to_current_path(x_y_yaw_state,s) # current car state relative to current path index
+        n = self.high_level_solver_generator_obj.n_points_kernelized 
+        labels_x,labels_y,labels_heading,labels_k,local_path_length,labels_s = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forward,xyyaw_ref_path,n)
 
 
         if self.single_layer == False:
             # ------ HIGH LEVEL SOLVER ------
-            pos_x_init_rot, pos_y_init_rot, yaw_init_rot,xyyaw_ref_path = self.relative_xyyaw_to_current_path(x_y_yaw_state,s) # current car state relative to current path index
-            n = self.high_level_solver_generator_obj.n_points_kernelized 
-            labels_x,labels_y,labels_heading,labels_k,local_path_length,labels_s = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forward,xyyaw_ref_path,n)
-            problem_high_level = self.set_up_high_level_solver(pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length,labels_x,labels_y,labels_heading,labels_k,labels_s)
+            problem_high_level = self.set_up_high_level_solver(Ds_back, pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length,labels_x,labels_y,labels_heading,labels_k,labels_s)
             
             start_solve_time = time.time()
             # call the high level solver
@@ -559,11 +561,8 @@ class MPCC_controller_class(path_handeling_utilities_class):
         else: # running single layer solver
 
             # ------ SINGLE LAYER SOLVER ------
-            pos_x_init_rot, pos_y_init_rot, yaw_init_rot,xyyaw_ref_path = self.relative_xyyaw_to_current_path(x_y_yaw_state,s) # current car state relative to current path index
-            n = self.single_layer_solver_generator_obj.n_points_kernelized 
-            labels_x,labels_y,labels_heading,labels_k,local_path_length,labels_s = self.produce_ylabels_4_local_kernelized_path(s,Ds_back,Ds_forward,xyyaw_ref_path,n)
             problem_single_layer = self.set_up_single_layer_solver_problem(pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega,
-                                           V_target, self.q_v,local_path_length,labels_k,labels_s,Ds_back)
+                                           V_target, self.q_v,local_path_length,labels_k,labels_s,Ds_back,labels_x,labels_y,labels_heading)
             
             start_solve_time = time.time()
             # call the high level solver
@@ -600,20 +599,36 @@ class MPCC_controller_class(path_handeling_utilities_class):
             #print('throttle:', np.round(output_array_single_layer[:,0],2))
              
             self.publish_control_inputs(output_array_single_layer) # this works the same as the low level output because it's the first two values that get published
-            np.set_printoptions(precision=2, suppress=True)  # Set precision for NumPy
+            #np.set_printoptions(precision=2, suppress=True)  # Set precision for NumPy
 
 
             # extact 
-            # 0        1        2     3     4     5   6  7  8 9 10    11    12 
-            # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
-            # high level and lowlevel are the same for single layer so send the same values
-            x_high_level = output_array_single_layer[:,3]
-            y_high_level = output_array_single_layer[:,4]
-            x_low_level = output_array_single_layer[:,3]
-            y_low_level = output_array_single_layer[:,4]
-            x_path = output_array_single_layer[:,10]
-            y_path = output_array_single_layer[:,11]
-            heading_path = output_array_single_layer[:,12]
+
+            if self.MPC_algorithm == 'CAMPCC':
+                # 0        1        2     3     4     5   6  7  8 9 10    11    12 
+                # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
+                # high level and lowlevel are the same for single layer so send the same values
+                x_high_level = output_array_single_layer[:,3]
+                y_high_level = output_array_single_layer[:,4]
+                x_low_level = output_array_single_layer[:,3]
+                y_low_level = output_array_single_layer[:,4]
+                x_path = output_array_single_layer[:,10]
+                y_path = output_array_single_layer[:,11]
+                heading_path = output_array_single_layer[:,12]
+            else:
+                # 0        1        2     3      4     5      6   7  8  9  10 
+                # th_input,st_input,s_dot,slack, pos_x,pos_y, yaw,vx,vy,w  ,s
+                x_high_level = output_array_single_layer[:,4]
+                y_high_level = output_array_single_layer[:,5]
+                x_low_level = output_array_single_layer[:,4]
+                y_low_level = output_array_single_layer[:,5]
+                # this is more triky because it is not redily available
+                # get s_vec 
+                s_vec = output_array_single_layer[:,10]
+                #evaluate the path quantities
+                x_path = np.interp(s_vec/local_path_length, labels_s, labels_x)
+                y_path = np.interp(s_vec/local_path_length, labels_s, labels_y)
+                heading_path = np.interp(s_vec/local_path_length, labels_s, labels_heading)
 
 
 
@@ -748,12 +763,13 @@ class MPCC_controller_class(path_handeling_utilities_class):
         
         
         else: #load single track solver
-            if MPC_algorithm == 'CAMPCC':
-                                                        
+            if MPC_algorithm == 'CAMPCC':                                
                 self.single_layer_solver_generator_obj = generate_single_layer_CAMPCC(dynamic_model,actuator_dynamics,self.actuator_dynamics_params_folder,self.GP_params_folder)
-            else:
-                print('Single layer only works with CAMPCC, not updating solver type')
             
+            elif MPC_algorithm == 'MPCC_PP':
+                
+                self.single_layer_solver_generator_obj = generate_single_layer_MPCCPP(dynamic_model,self.GP_params_folder)
+
             if solver_software == 'ACADOS':
                 single_layer_solver_path = os.path.join(self.solvers_folder_path,
                                                         self.single_layer_solver_generator_obj.solver_name_acados,
@@ -818,7 +834,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
 
 
-    def set_up_high_level_solver(self,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length, labels_x,labels_y,labels_heading,labels_k,labels_s):
+    def set_up_high_level_solver(self,Ds_back,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,V_target, local_path_length, labels_x,labels_y,labels_heading,labels_k,labels_s):
         # set smalle oprimization step
         #self.high_level_solver.options_set('step_length',0.75)
 
@@ -828,6 +844,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         xinit[0] = pos_x_init_rot
         xinit[1] = pos_y_init_rot
         xinit[2] = yaw_init_rot
+        xinit[3] = Ds_back # setting to v target
 
         # # define parameters and first guess
         if self.MPC_algorithm == 'MPCC' or self.MPC_algorithm == 'CAMPCC':
@@ -951,7 +968,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
     
 
     def set_up_single_layer_solver_problem(self,pos_x_init_rot, pos_y_init_rot, yaw_init_rot,vx,vy,omega,
-                                           V_target, q_v,local_path_length,labels_k,labels_s,Ds_back):
+                                           V_target, q_v,local_path_length,labels_k,labels_s,Ds_back,labels_x,labels_y,labels_heading):
         # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
         xinit = np.zeros(self.single_layer_solver_generator_obj.nx) # all zeros
         xinit[0] = pos_x_init_rot
@@ -961,24 +978,31 @@ class MPCC_controller_class(path_handeling_utilities_class):
         xinit[4] = vy
         xinit[5] = omega
         xinit[6] = Ds_back # s is the current position along the path
-        if self.actuator_dynamics:
-            # initialize past actions
-            n_th_past_actions = self.single_layer_solver_generator_obj.weights_th_FIR_solver.shape[0] -1
-            n_st_past_actions = self.single_layer_solver_generator_obj.weights_st_FIR_solver.shape[0] -1
 
-            # print values
-            #print('n_th_past_actions:',self.th_past_actions[:n_th_past_actions])
-            #print('n_st_past_actions:',self.st_past_actions[:n_st_past_actions])
-            past_th_st = [*self.th_past_actions[:n_th_past_actions],*self.st_past_actions[:n_st_past_actions]]
-            xinit[10:] = past_th_st
+        if self.actuator_dynamics:
+            print('past inputs not yet supported')
+            # # initialize past actions
+            # n_th_past_actions = self.single_layer_solver_generator_obj.weights_th_FIR_solver.shape[0] -1
+            # n_st_past_actions = self.single_layer_solver_generator_obj.weights_st_FIR_solver.shape[0] -1
+
+            # # print values
+            # #print('n_th_past_actions:',self.th_past_actions[:n_th_past_actions])
+            # #print('n_st_past_actions:',self.st_past_actions[:n_st_past_actions])
+            # past_th_st = [*self.th_past_actions[:n_th_past_actions],*self.st_past_actions[:n_st_past_actions]]
+            # xinit[10:] = past_th_st
 
 
         # the other states should be zero
 
         # stack parameters for all time steps
                             #local_path_length,       q_con,      q_u,     q_acc,     qt_pos,      qt_rot,    lane_width,        qt_s_high,  q_v, labels_k
-        params_i = np.array([local_path_length, self.q_con, self.q_u, self.q_acc, self.qt_pos_high, self.qt_rot_high, self.lane_width, self.qt_s_high, q_v,*labels_k])
-        
+        if self.MPC_algorithm == 'CAMPCC':
+            params_i = np.array([local_path_length, self.q_con, self.q_u, self.q_acc, self.qt_pos_high, self.qt_rot_high, self.lane_width, self.qt_s_high, q_v,*labels_k])
+        elif self.MPC_algorithm == 'MPCC_PP':
+                              #  local_path_length,      q_con,      q_lag,      q_u,     q_sdot,     q_acc,      qt_pos,           qt_rot,           lane_width,      qt_s_high,     q_v, labels_x,  labels_y,  labels_heading
+            params_i = np.array([local_path_length, self.q_con, self.q_lag, self.q_u,self.q_sdot,self.q_acc, self.qt_pos_high, self.qt_rot_high, self.lane_width, self.qt_s_high,self.q_v,*labels_x, *labels_y, *labels_heading])
+
+
         param_array = np.zeros((self.single_layer_solver_generator_obj.N+1, self.single_layer_solver_generator_obj.n_parameters))
         for i in range(self.single_layer_solver_generator_obj.N+1):
             param_array[i,:] = params_i
