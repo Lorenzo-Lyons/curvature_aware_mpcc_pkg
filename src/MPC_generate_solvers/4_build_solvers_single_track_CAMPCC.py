@@ -16,15 +16,19 @@ current_script_path = os.path.realpath(__file__)
 current_script_dir = os.path.dirname(current_script_path)
 
 
-# Using GP and actuator dynamics from DART package
+# # # Using GP and actuator dynamics from DART package
 import importlib.resources
 # import the GP parameters
-with importlib.resources.path('DART_dynamic_models', 'SVGP_saved_parameters_high_speed') as data_path:
+with importlib.resources.path('DART_dynamic_models', 'SVGP_saved_parameters_slippery_floor') as data_path:
     GP_params_folder = str(data_path)
-# import the actuator dynamics parameters
-with importlib.resources.path('DART_dynamic_models', 'actuator_dynamics_saved_parameters') as data_path:
-    actuator_dynamics_folder = str(data_path)
 
+# # # import the actuator dynamics parameters
+# # with importlib.resources.path('DART_dynamic_models', 'actuator_dynamics_saved_parameters') as data_path:
+# #     actuator_dynamics_folder = str(data_path)
+#GP_params_folder = os.path.join(current_script_dir, 'SVGP_saved_parameters') 
+
+#GP_params_folder = os.path.join(current_script_dir, 'SVGP_saved_parameters_slippery_floor')
+actuator_dynamics_folder = os.path.join(current_script_dir, 'actuator_dynamics_saved_parameters')
 
 
 

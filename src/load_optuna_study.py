@@ -26,8 +26,9 @@ assign_to_GUI = True
 ROS_study = True
 single_layer = True
 MPC_algorithm = 'CAMPCC' # 'MPCC' - 'CAMPCC' - 'MPCC_PP'
+dynamic_model = 'dynamic_bicycle' # 'dynamic_bicycle', 'dynamic_bicycle_GP'
 
-set_up_GUI_optuna_obj = set_up_GUI_optuna(GUI_mpc_node, single_layer, MPC_algorithm, ROS_study)
+set_up_GUI_optuna_obj = set_up_GUI_optuna(GUI_mpc_node, single_layer, MPC_algorithm, ROS_study,dynamic_model)
 
 
 
@@ -39,8 +40,12 @@ set_up_GUI_optuna_obj = set_up_GUI_optuna(GUI_mpc_node, single_layer, MPC_algori
 #     study_name = "optuna_studies/optuna_study_results_ROS_" + MPC_algorithm
 # else:
 #     study_name = "optuna_studies/optuna_study_results_" + MPC_algorithm
-study_name = set_up_GUI_optuna_obj.study_name
-storage_name = set_up_GUI_optuna_obj.storage_name   #"sqlite:///" + study_name + ".db"  # SQLite database file
+#study_name = set_up_GUI_optuna_obj.study_name
+#storage_name = set_up_GUI_optuna_obj.storage_name   #"sqlite:///" + study_name + ".db"  # SQLite database file
+
+# temp overwrite after changing the study name
+study_name = "optuna_studies/optuna_results_SINGLE_layer_ROS_CAMPCC"
+storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
 print('loading GUI parameters from: ', study_name)
 
 

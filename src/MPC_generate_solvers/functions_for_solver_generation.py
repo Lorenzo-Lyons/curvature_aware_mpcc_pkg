@@ -1146,8 +1146,13 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         self.solver_name_forces = 'single_layer_forces_CAMPCC_' + dynamic_model + actuator_dynamics_name_tag
 
         self.n_points_kernelized = 41 # number of points in the kernelized path (41 for reference)
-        self.time_horizon = 1.0 #1.5 * 0.5
-        self.N = 20 # stages 30
+        if dynamic_model == "dynamic_bicycle_GP":
+            self.time_horizon = 1 #1.5 * 0.5
+            self.N = 20 # stages 30
+        else:
+            self.time_horizon = 1.0
+            self.N = 20
+
         self.nx_base = 10 # pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading
         self.nu = 3 # throttle, stteering, slack
 
@@ -1175,7 +1180,10 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         #     self.n_inequality_constraints = 1 # no need for max centrifugal force
         # else:
         #     self.n_inequality_constraints = 3
-        self.n_inequality_constraints = 3
+        if self.dynamic_model == "dynamic_bicycle" or self.dynamic_model == "kinematic_bicycle":
+            self.n_inequality_constraints = 3
+        elif self.dynamic_model == "dynamic_bicycle_GP":
+            self.n_inequality_constraints = 4
 
         # set operational limits on the centrifugal force
         #self.max_centrifugal_force = 30 #6.5 # m/s^2
@@ -1187,9 +1195,12 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         self.u_l = np.array([-mf.c_m_self,-1, 0])
         self.u_u = np.array([1.0,+1, 100])
         # upper- lower bound on the states
-                            # pos_x ,pos_y, yaw, vx,    vy,  w,  s,    ref_x,ref_y,ref_heading
-        #self.x_l = np.array([-1000,-1000,-1000,-100,    -100,  -100,-100,-1000,-1000,-1000])
-        #self.x_u = np.array([ 1000, 1000,1000,  100,     100,   100,1000,1000,1000,1000])
+                            
+        # if self.dynamic_model == "dynamic_bicycle_GP":
+        #                         # pos_x ,pos_y, yaw, vx,    vy,  w,     s,    ref_x,ref_y,ref_heading
+        #     self.x_l = np.array([-1000,-1000, -1000,-1000, -0.5, -1000 ,-1000,-1000,-1000,-1000])
+        #     self.x_u = np.array([ 1000, 1000,  1000, 1000, +0.5, +1000, 1000,+1000,+1000,+1000])
+        # else:
         self.x_l = -np.infty * np.ones(self.nx)
         self.x_u = +np.infty * np.ones(self.nx)
         
@@ -1248,20 +1259,18 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         self.weights_th_FIR_solver = weights_th_solver[:-1] / np.sum(weights_th_solver[:-1]) # skip last value that will be 0 (this was needed to interpolate correctly)
         self.weights_st_FIR_solver = weights_st_solver[:-1] / np.sum(weights_st_solver[:-1])
 
-        # # # #  VERY TEMPORARY for debugging
-        # # print('TEMPORARY: setting weights to 0 except for the first element')
-        # # # replace with zeros except a one for the first element
-        # # self.weights_th_FIR_solver = np.zeros_like(self.weights_th_FIR_solver)
-        # # self.weights_st_FIR_solver = np.zeros_like(self.weights_st_FIR_solver)
-        # # self.weights_th_FIR_solver[2] = 1
-        # # self.weights_st_FIR_solver[2] = 1
+        # # #  VERY TEMPORARY for debugging
+        # print('TEMPORARY: setting weights to 0 except for the first element')
+        # # replace with zeros except a one for the first element
+        # self.weights_th_FIR_solver = np.zeros_like(self.weights_th_FIR_solver)
+        # #self.weights_st_FIR_solver = np.zeros_like(self.weights_st_FIR_solver)
+        # self.weights_th_FIR_solver[1] = 1
+        # self.weights_st_FIR_solver[1] = 1
 
         # to check at solver build time that the weights are correct
         print('loaded actuator dynamics parameters')
         print('throttle FIR weights: ', self.weights_th_FIR_solver)
         print('steering FIR weights: ', self.weights_st_FIR_solver)
-
-
 
 
 
@@ -1364,49 +1373,56 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         model.lb = np.array([*self.u_l,*self.x_l])  # lower bound on inputs
         model.ub = np.array([*self.u_u,*self.x_u])  # upper bound on inputs
 
+
+
         # Set objective
         for i in range(self.N):
             model.objective[i] = self.objective_forces  # eval_obj is a Python function
         model.objective[self.N] = self.objective_terminal_forces
-        
+
         #model.LSobjective = self.objective_LS_forces  # Assign the LSobjective function
-    
+
 
         # Set dynamic constraint
         #if self.actuator_dynamics:
         #if self.dynamic_model == "kinematic_bicycle" or self.dynamic_model =="dynamic_bicycle":
         self.discrete_dynamics_intermediate_shooting_vehicle = 8
         # elif self.dynamic_model == "dynamic_bicycle_GP":
-        #     self.discrete_dynamics_intermediate_shooting_vehicle = 1 
-        self.discrete_dynamics_intermediate_shooting_vehicle_GP = 1
+        #      self.discrete_dynamics_intermediate_shooting_vehicle = 1 
+
+        self.discrete_dynamics_intermediate_shooting_vehicle_GP = 2
 
         self.discrete_dynamics_intermediate_shooting_path = 3
 
-        print('discrete dynamics will be integrated with forward Euler with intermediate shooting nodes')
-        print('discrete_dynamics_intermediate_shooting_vehicle: ', self.discrete_dynamics_intermediate_shooting_vehicle)
-        print('discrete_dynamics_intermediate_shooting_vehicle_GP: ', self.discrete_dynamics_intermediate_shooting_vehicle_GP)
-        print('discrete_dynamics_intermediate_shooting_path: ', self.discrete_dynamics_intermediate_shooting_path)
-        model.eq = self.single_layer_discrete_dynamics_forces
+        # print('discrete dynamics will be integrated with forward Euler with intermediate shooting nodes')
+        # print('discrete_dynamics_intermediate_shooting_vehicle: ', self.discrete_dynamics_intermediate_shooting_vehicle)
+        # print('discrete_dynamics_intermediate_shooting_vehicle_GP: ', self.discrete_dynamics_intermediate_shooting_vehicle_GP)
+        # print('discrete_dynamics_intermediate_shooting_path: ', self.discrete_dynamics_intermediate_shooting_path)
+        # model.eq = self.single_layer_discrete_dynamics_forces
         # else:
-        #     model.continuous_dynamics = self.single_layer_planner_continous_dynamics_forces
+        model.continuous_dynamics = self.single_layer_planner_continous_dynamics_forces
 
 
 
     
         # Set non linear constraints
         model.nh = self.n_inequality_constraints
-        model.ineq = self.non_lin_constraint_forces
+        if self.dynamic_model == "dynamic_bicycle" or self.dynamic_model == "kinematic_bicycle":
+            model.ineq = self.non_lin_constraint_forces
+        elif self.dynamic_model == "dynamic_bicycle_GP":
+            model.ineq = self.non_lin_constraint_forces_GP
+        
         model.hl = np.zeros(self.n_inequality_constraints)   #np.array([0.0,0.0,0.0])
         model.hu = np.ones(self.n_inequality_constraints)*np.infty  #np.array([1000.0,1000.0,1000.0])  # upper bound on inequality constraints
         
         # Define solver options
         codeoptions = forcespro.CodeOptions('FORCESNLPsolver') #get standard options
 
-        if self.actuator_dynamics == False:
-            # continuous dynamics options
-            codeoptions.nlp.integrator.type = 'ERK4' #'ERK4' #'ForwardEuler' #'ERK4' #'IRK2' # 'ForwardEuler' #
-            codeoptions.nlp.integrator.Ts = self.time_horizon / (self.N+1)
-            codeoptions.nlp.integrator.nodes = 2 # intermediate nodes for the integrator
+        #if self.actuator_dynamics == False:
+        # continuous dynamics options
+        codeoptions.nlp.integrator.type = 'ForwardEuler' #'ERK4' #'ForwardEuler' #'ERK4' #'IRK2' # 'ForwardEuler' #
+        codeoptions.nlp.integrator.Ts = self.time_horizon / (self.N+1)
+        codeoptions.nlp.integrator.nodes = 5 # intermediate nodes for the integrator
 
 
         codeoptions.name = self.solver_name_forces
@@ -1600,7 +1616,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         err_pos_squared_t = (pos_x - ref_x)**2 + (pos_y - ref_y)**2
         j_term_pos =    qt_pos * err_pos_squared_t + \
                         qt_rot * misalignment #- qt_s_high * (s/(self.time_horizon*4)) ** 2
-        
+        # add zero velocity for terminal cost
         return j_term_pos
     
     def objective_terminal_forces(self, z, p):
@@ -1770,52 +1786,64 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         else:
             th_4_model = th_input
             st_4_model = st_input
+            
 
         # time step for the solver
         dt_solver = self.time_horizon / self.N
 
         # --- vehicle dynamics constraint ---
-        dt_vehicle = dt_solver / self.discrete_dynamics_intermediate_shooting_vehicle
-        for _ in range(self.discrete_dynamics_intermediate_shooting_vehicle):
-            if self.dynamic_model == "kinematic_bicycle":
-                pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.kinematic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,yaw)
-            elif self.dynamic_model == "dynamic_bicycle":
-                pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)
-            
-            elif self.dynamic_model == "dynamic_bicycle_GP": # 
-                # pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,
-                #                                                                             self.SVGP_unified_analytic_obj.use_nominal_model.item())
-                #evaluate GP contribution
-                if self.SVGP_unified_analytic_obj.use_nominal_model.item():    
-                    pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)                                                                     
-                else:
-                    pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = 0,0,0,0,0,0 # null dynamics
+        if self.dynamic_model == "kinematic_bicycle" or self.dynamic_model == "dynamic_bicycle":
+            dt_vehicle = dt_solver / self.discrete_dynamics_intermediate_shooting_vehicle
+            for _ in range(self.discrete_dynamics_intermediate_shooting_vehicle):
+                if self.dynamic_model == "kinematic_bicycle":
+                    pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.kinematic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,yaw)
+                elif self.dynamic_model == "dynamic_bicycle":
+                    pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)
                 
-            else:
-                print('')
-                print('Dynamic_constraint: Invalid dynamic model setting')
-            
-            #pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)
-            # integrating with simple Euler
-            # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_pas
-            pos_x = pos_x + pos_x_dot * dt_vehicle
-            pos_y = pos_y + pos_y_dot * dt_vehicle
-            yaw = yaw + yaw_dot * dt_vehicle
-            vx = vx + vx_dot * dt_vehicle
-            vy = vy + vy_dot * dt_vehicle
-            w = w + w_dot * dt_vehicle
+                # elif self.dynamic_model == "dynamic_bicycle_GP": # 
+                #     # pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,
+                #     #                                                                             self.SVGP_unified_analytic_obj.use_nominal_model.item())
+                #     #evaluate GP contribution
+                #     if self.SVGP_unified_analytic_obj.use_nominal_model.item():    
+                #         pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)                                                                     
+                #     else:
+                #         pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = 0,0,0,0,0,0 # null dynamics
+                    
+                else:
+                    print('')
+                    print('Dynamic_constraint: Invalid dynamic model setting')
+                
+                #pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)
+                # integrating with simple Euler
+                # th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_pas
+                pos_x = pos_x + pos_x_dot * dt_vehicle
+                pos_y = pos_y + pos_y_dot * dt_vehicle
+                yaw = yaw + yaw_dot * dt_vehicle
+                vx = vx + vx_dot * dt_vehicle
+                vy = vy + vy_dot * dt_vehicle
+                w = w + w_dot * dt_vehicle
+
 
         # forwards integrate the GP only onece
         if self.dynamic_model == "dynamic_bicycle_GP":
             dt_GP = dt_solver / self.discrete_dynamics_intermediate_shooting_vehicle_GP
             for _ in range(self.discrete_dynamics_intermediate_shooting_vehicle_GP):
-                x_star = casadi.horzcat(th_4_model,st_4_model,vx,vy,w)
-                vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_unified_analytic_obj.predictive_mean_only(x_star)
-                # pos_x_dot_GP, pos_y_dot_GP, yaw_dot_GP, vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,True) # not using dynamic model again so set it to false
-                # pos_x = pos_x + pos_x_dot_GP * dt_GP
-                # pos_y = pos_y + pos_y_dot_GP * dt_GP
-                # yaw = yaw + yaw_dot_GP * dt_GP
-                #vx = vx + vx_dot_GP * dt_GP
+                # if self.SVGP_unified_analytic_obj.use_nominal_model.item():
+                #     x_star = casadi.horzcat(th_4_model,st_4_model,vx,vy,w)
+                #     vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_unified_analytic_obj.predictive_mean_only(x_star)
+                #     # pos_x_dot_GP, pos_y_dot_GP, yaw_dot_GP, vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,True) # not using dynamic model again so set it to false
+                #     # pos_x = pos_x + pos_x_dot_GP * dt_GP
+                #     # pos_y = pos_y + pos_y_dot_GP * dt_GP
+                #     # yaw = yaw + yaw_dot_GP * dt_GP
+                #     vx = vx + vx_dot_GP * dt_GP
+                #     vy = vy + vy_dot_GP * dt_GP
+                #     w = w + w_dot_GP * dt_GP
+                # else:
+                pos_x_dot_GP, pos_y_dot_GP, yaw_dot_GP, vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,self.SVGP_unified_analytic_obj.use_nominal_model.item()) # not using dynamic model again so set it to false
+                pos_x = pos_x + pos_x_dot_GP * dt_GP
+                pos_y = pos_y + pos_y_dot_GP * dt_GP
+                yaw = yaw + yaw_dot_GP * dt_GP
+                vx = vx + vx_dot_GP * dt_GP
                 vy = vy + vy_dot_GP * dt_GP
                 w = w + w_dot_GP * dt_GP
 
@@ -1865,24 +1893,37 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # vx = 2.5 --> w = -3.8 (observed point when car lifts wheels off the ground)
         slope = 3.8 / (2.5 - 4.6)
         w0 = - slope * 4.6
-        #w0 = w0 * 1.1
+        #w0 = w0 * 1
 
         h1 = vx*slope - w_constr + w0 + slack
         h2 = vx*slope + w_constr + w0 + slack
 
         return [h1,h2]
 
+    def max_uncertainty_constraint(self,th_input,st_input,vx,vy,w,slack):
+        x_star = casadi.horzcat(th_input,st_input,vx,vy,w)
+        cov_mS_x, cov_mS_y, cov_mS_w = self.SVGP_unified_analytic_obj.predictive_cov_only(x_star)
+        # multiply by 2 so you are in the 2 sigma interval
+        sigma_interval = 0.75
+        h1 = (sigma_interval*self.SVGP_unified_analytic_obj.max_stdev_x)**2 - cov_mS_x + slack
+        h2 = (sigma_interval*self.SVGP_unified_analytic_obj.max_stdev_y)**2 - cov_mS_y + slack
+        h3 = (sigma_interval*self.SVGP_unified_analytic_obj.max_stdev_w)**2 - cov_mS_w + slack
+
+        return  [1,1,1]
+    
+
 
     def non_lin_constraint_forces(self,z, p):
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
-        # ,*self.max_centrifugal_force_constraint(vx,w,slack,st_input)
-        # if self.dynamic_model == "dynamic_bicycle_GP":
-        #     # the GP doesn't need the centrifugal constraint cause the model is more precise
-        #     return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width)]
-        # else:
         return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width),*self.max_centrifugal_force_constraint(vx,w,slack,st_input)]
 
+    def non_lin_constraint_forces_GP(self,z, p):
+        th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(z)
+        local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
+
+        return [self.lane_boundary_constraint(pos_x,pos_y,ref_x,ref_y,slack,lane_width),
+                *self.max_uncertainty_constraint(th_input,st_input,vx,vy,w,slack)]
 
 
     def produce_X0(self,V_target,local_path_length,labels_k,labels_s):

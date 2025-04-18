@@ -8,7 +8,7 @@ build_acados=False
 build_FORCES=True
 
 # select the solver to build MPCC or CAMPCC
-dynamic_models = ['dynamic_bicycle'] # 'kinematic_bicycle', 'dynamic_bicycle', 'dynamic_bicycle_GP'
+dynamic_models = ['dynamic_bicycle_GP'] # 'kinematic_bicycle', 'dynamic_bicycle', 'dynamic_bicycle_GP'
 
 # select where to load the actuator dynamics from
 current_script_path = os.path.realpath(__file__)
@@ -18,7 +18,7 @@ current_script_dir = os.path.dirname(current_script_path)
 # Using GP and actuator dynamics from DART package
 import importlib.resources
 # import the GP parameters
-with importlib.resources.path('DART_dynamic_models', 'SVGP_saved_parameters_high_speed') as data_path:
+with importlib.resources.path('DART_dynamic_models', 'SVGP_saved_parameters') as data_path:
     GP_params_folder = str(data_path)
 
 

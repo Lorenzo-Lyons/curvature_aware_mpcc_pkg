@@ -7,10 +7,10 @@ from functions_for_MPCC_node_running import find_s_of_closest_point_on_global_pa
 from MPC_generate_solvers.path_track_definitions import generate_path_data
 import time
 from std_msgs.msg import String
-
+import tf_conversions
 
 from std_msgs.msg import Float32, Float32MultiArray, Bool,Float64MultiArray
-from geometry_msgs.msg import Point, PoseWithCovarianceStamped
+from geometry_msgs.msg import Point, PoseWithCovarianceStamped,PoseStamped
 from visualization_msgs.msg import MarkerArray, Marker
 from curvature_aware_mpcc_pkg.msg import ThreeTimeStampsFloat32 
 from datetime import datetime
@@ -67,7 +67,7 @@ class MPC_GUI_manager:
             lane_width_old = self.vehicles_list[i].lane_width
 
 
-
+            self.vehicles_list[i].synchronous_simulation = config['synchronous_simulation']
             # high level solver
             self.vehicles_list[i].V_target = config['V_target']
             self.vehicles_list[i].q_con = config['q_con']
@@ -261,11 +261,14 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.car_number = car_number
         self.dt_controller_rate = dt_controller_rate
 
+        self.synchronous_simulation = False
+        self.pub_rviz_vehicle_visualization = rospy.Publisher('rviz_data_' + str(car_number), PoseStamped, queue_size=10)
+
         # initialize state variables
         self.vx = 0
         self.vy = 0
         self.omega = 0
-        self.x_y_yaw_state = [0, 0, 0] 
+        self.x_y_yaw_state = [-1.6, -2.2, 0] 
         self.pose_msg_time = rospy.get_rostime() # initialize time of pose message
 
 
@@ -338,7 +341,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         # set up publishers for robot velocity estimates
         #set up past position variables
-        past_states = 2  # actually this is past states + 1 for current state  --- 2
+        past_states = 3  # actually this is past states + 1 for current state  --- 2
         self.past_x_vicon = np.zeros(past_states)
         self.past_y_vicon = np.zeros(past_states)
         self.past_yaw_vicon = np.zeros(past_states)
@@ -369,9 +372,6 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         # subscribe to comm delay
         self.comm_delay_subscriber = rospy.Subscriber('commdelay_laptop_2_car_' + str(car_number), Float32, self.comm_delay_subscriber_callback)
-
-
-
 
 
         # set up publishers for internal mpc node states (selections from GUI)
@@ -974,22 +974,22 @@ class MPCC_controller_class(path_handeling_utilities_class):
         xinit[0] = pos_x_init_rot
         xinit[1] = pos_y_init_rot
         xinit[2] = yaw_init_rot
-        xinit[3] = vx 
+        xinit[3] = np.max([vx,0]) 
         xinit[4] = vy
-        xinit[5] = omega
+        xinit[5] = omega 
         xinit[6] = Ds_back # s is the current position along the path
 
         if self.actuator_dynamics:
             print('past inputs not yet supported')
-            # # initialize past actions
-            # n_th_past_actions = self.single_layer_solver_generator_obj.weights_th_FIR_solver.shape[0] -1
-            # n_st_past_actions = self.single_layer_solver_generator_obj.weights_st_FIR_solver.shape[0] -1
+            # initialize past actions
+            n_th_past_actions = self.single_layer_solver_generator_obj.weights_th_FIR_solver.shape[0] -1
+            n_st_past_actions = self.single_layer_solver_generator_obj.weights_st_FIR_solver.shape[0] -1
 
-            # # print values
-            # #print('n_th_past_actions:',self.th_past_actions[:n_th_past_actions])
-            # #print('n_st_past_actions:',self.st_past_actions[:n_st_past_actions])
-            # past_th_st = [*self.th_past_actions[:n_th_past_actions],*self.st_past_actions[:n_st_past_actions]]
-            # xinit[10:] = past_th_st
+            # print values
+            print('n_th_past_actions:',self.th_past_actions[:n_th_past_actions])
+            print('n_st_past_actions:',self.st_past_actions[:n_st_past_actions])
+            past_th_st = [*self.th_past_actions[:n_th_past_actions],*self.st_past_actions[:n_st_past_actions]]
+            xinit[10:] = past_th_st
 
 
         # the other states should be zero
@@ -1111,8 +1111,13 @@ class MPCC_controller_class(path_handeling_utilities_class):
     def publish_control_inputs(self, output_array_low_level):
         #print('last converged', self.last_converged)    
         # publish input values
-        #print('throttle:', output_array_low_level[:, 0])
-        #print('steering:', output_array_low_level[:, 1])
+        # for i in range(output_array_low_level.shape[0]):
+        #     print(f"throttle: {output_array_low_level[i, 0]:.2f}, "
+        #         f"steering: {output_array_low_level[i, 1]:.2f}, "
+        #         f"slack: {output_array_low_level[i, 2]:.2f}, "
+        #         f"vx: {output_array_low_level[i, 6]:.2f}, "
+        #         f"vy: {output_array_low_level[i, 7]:.2f}, "
+        #         f"omega: {output_array_low_level[i, 8]:.2f}")
 
         throttle_val = Float32(output_array_low_level[0, 0])
         steering_val = Float32(output_array_low_level[0, 1])
@@ -1145,6 +1150,45 @@ class MPCC_controller_class(path_handeling_utilities_class):
         # publish the messages
         self.mpc_throttle_publisher.publish(msg_mpc_th)
         self.mpc_steering_publisher.publish(msg_mpc_st)
+
+        if self.synchronous_simulation:
+            # publish next step in open loop solution
+            pos_x_init_rot, pos_y_init_rot, yaw_init_rot,xyyaw_ref_path = self.relative_xyyaw_to_current_path(self.x_y_yaw_state,self.s)
+            transformed_x, transformed_y = self.rototranslate_path_2_abs_frame(output_array_low_level[1,3],
+                                                                                output_array_low_level[1,4],
+                                                                                xyyaw_ref_path)
+            # clip yaw to [-pi, pi]
+            yaw_next = xyyaw_ref_path[2] + output_array_low_level[1,5]  #np.arctan2(np.sin(output_array_low_level[1,5]), np.cos(output_array_low_level[1,5]))
+            
+            # simulate vicon motion capture system output
+            #publish rviz vehicle visualization
+            rviz_message = PoseStamped()
+            quaternion = tf_conversions.transformations.quaternion_from_euler(0.0, 0.0,yaw_next)
+            rviz_message.pose.position.x = transformed_x[0]
+            rviz_message.pose.position.y = transformed_y[0]
+            rviz_message.pose.orientation.x = quaternion[0]
+            rviz_message.pose.orientation.y = quaternion[1]
+            rviz_message.pose.orientation.z = quaternion[2]
+            rviz_message.pose.orientation.w = quaternion[3]
+
+            # frame data is necessary for rviz
+            rviz_message.header.frame_id = 'map'
+            self.pub_rviz_vehicle_visualization.publish(rviz_message)
+            
+            if self.safety_value == 1:
+                self.x_y_yaw_state = np.array([transformed_x[0],transformed_y[0],yaw_next])
+                self.vx = output_array_low_level[1,6]
+                self.vy = output_array_low_level[1,7]
+                self.omega = output_array_low_level[1,8]
+
+                self.vx_publisher.publish(Float32(self.vx))
+                self.vy_publisher.publish(Float32(self.vy))
+                self.w_publisher.publish(Float32(self.omega))
+
+
+
+
+        
 
 
 

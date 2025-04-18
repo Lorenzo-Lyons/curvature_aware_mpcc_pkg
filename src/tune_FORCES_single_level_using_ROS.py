@@ -30,16 +30,20 @@ GUI_mpc_node = Client("/mpc_node", timeout=5)
 max_laps = 3
 
 # select algorithm to tune
-MPC_algorithm = 'CAMPCC' #
+MPC_algorithm = 'CAMPCC' # 'MPCC_PP'
+dynamic_model = 'dynamic_bicycle_GP' # 'dynamic_bicycle', 'dynamic_bicycle_GP'
 single_layer_tag = True
 ROS_study = True
-set_up_GUI_optuna_obj = set_up_GUI_optuna(GUI_mpc_node,single_layer_tag,MPC_algorithm,ROS_study)
+set_up_GUI_optuna_obj = set_up_GUI_optuna(GUI_mpc_node,single_layer_tag,MPC_algorithm,ROS_study,dynamic_model)
 
 
 # set dart simulator parameters
 # for now using just the dynamic bicycle model # NOTE update this with the SVGP model and the disturbance once I hav ethe new dataset
 GUI_client_simulator.update_configuration({"disturbance": False})
-GUI_client_simulator.update_configuration({"dynamic_model_choice": 2})
+if dynamic_model == 'dynamic_bicycle':
+    GUI_client_simulator.update_configuration({"dynamic_model_choice": 2})
+elif dynamic_model == 'dynamic_bicycle_GP':
+    GUI_client_simulator.update_configuration({"dynamic_model_choice": 3})
 
 
 
@@ -66,6 +70,10 @@ def set_mpc_node_GUI(trial,GUI_mpc_node):
     GUI_mpc_node.update_configuration({"q_v": q_v})
     GUI_mpc_node.update_configuration({"q_u": q_u})
     GUI_mpc_node.update_configuration({"q_acc": q_acc})
+
+    if MPC_algorithm == 'MPCC_PP':
+        q_lag = trial.suggest_float("q_lag", 1.0, 100.0, log=True)
+        GUI_mpc_node.update_configuration({"q_lag": q_lag})
 
 
 
