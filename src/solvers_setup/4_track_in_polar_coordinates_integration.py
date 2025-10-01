@@ -4,7 +4,7 @@ import os, sys, roslib
 import matplotlib.pyplot as plt
 
 # ─────────────── ROS helper to locate extra code ──────────────
-pkg_path = roslib.packages.get_pkg_dir('racing_campcc_pkg')
+pkg_path = roslib.packages.get_pkg_dir('curvature_aware_mpcc_pkg')
 sys.path.append(os.path.join(pkg_path, 'src'))
 from reference_path_handeling_functions import generate_path_data  # noqa
 

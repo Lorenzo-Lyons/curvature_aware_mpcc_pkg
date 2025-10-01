@@ -5,7 +5,7 @@ from acados_template import AcadosOcpSolver
 import matplotlib.pyplot as plt
 import sys
 import roslib
-pkg_path = roslib.packages.get_pkg_dir('racing_campcc_pkg')
+pkg_path = roslib.packages.get_pkg_dir('curvature_aware_mpcc_pkg')
 sys.path.append(os.path.join(pkg_path, 'src'))    
 from reference_path_handeling_functions import generate_path_data
 from mpc_node import path_handeling_utilities_class

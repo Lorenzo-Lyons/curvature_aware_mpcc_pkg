@@ -22,12 +22,12 @@ import rospy
 import roslib.packages
 import sys
 
-pkg_path = roslib.packages.get_pkg_dir('racing_campcc_pkg')
+pkg_path = roslib.packages.get_pkg_dir('curvature_aware_mpcc_pkg')
 sys.path.append(os.path.join(pkg_path, 'src'))     # or whatever sub‑folder holds the module
 from reference_path_handeling_functions import generate_path_data
 
 
-#from MPCC_ROS_workspace.src.racing_campcc_pkg.src.reference_path_handeling_functions import generate_path_data
+#from MPCC_ROS_workspace.src.curvature_aware_mpcc_pkg.src.reference_path_handeling_functions import generate_path_data
 
 from std_msgs.msg import Float32, Float32MultiArray
 from geometry_msgs.msg import Point, PoseStamped
@@ -1396,7 +1396,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         marker.header.stamp = rospy.Time.now()    # associate a timestamp to the frame
 
         marker.type = marker.MESH_RESOURCE
-        marker.mesh_resource = "package://racing_campcc_pkg/src/Dae_models/quadrotor_base.dae"
+        marker.mesh_resource = "package://curvature_aware_mpcc_pkg/src/Dae_models/quadrotor_base.dae"
         marker.id = 1
 
         # Set the scale of the marker

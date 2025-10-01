@@ -6,27 +6,22 @@ from drone_dynamic_model import drone
 import matplotlib.pyplot as plt
 
 # ─────────────── ROS helper to locate extra code ──────────────
-pkg_path = roslib.packages.get_pkg_dir('racing_campcc_pkg')
+pkg_path = roslib.packages.get_pkg_dir('curvature_aware_mpcc_pkg')
 sys.path.append(os.path.join(pkg_path, 'src'))
 from reference_path_handeling_functions import generate_path_data  # noqa
 
-#track_choice = 'second_spline_race_track' ###
+
 #track_choice = 'vicon_racetrack'
 track_choice = 'spline_circle'
 
 
 
-# s_vals_global_path, x_vals_global_path, y_vals_global_path, z_vals_global_path, \
-# s_4_local_path, x_4_local_path, y_4_local_path, z_4_local_path, \
-# dx_ds, dy_ds, dz_ds, d2x_ds2, d2y_ds2, d2z_ds2, k_vec, \
-# gates, gates_s_global_path, time_optimal_trajectory = generate_path_data(track_choice)
-
-load_optimally_smoothed_path = False
-
 s_vals_global_path, x_vals_global_path, y_vals_global_path, z_vals_global_path, \
 s_4_local_path, x_4_local_path, y_4_local_path, z_4_local_path, \
-dx_ds, dy_ds, dz_ds, d2x_ds2, d2y_ds2, d2z_ds2,k_vec, \
-gates, gates_s, time_optimal_trajectory = generate_path_data(track_choice, load_optimally_smoothed_path)
+dx_ds, dy_ds, dz_ds, d2x_ds2, d2y_ds2, d2z_ds2, \
+gates, gates_s_global_path, time_optimal_trajectory = generate_path_data(track_choice)
+
+
 
 
 
@@ -38,48 +33,63 @@ ds_interval_target = 0.2 # ⬤ EDIT ME: discretization step (m)
 N  = int(np.ceil(s_vals_global_path[-1]/ds_interval_target))           # ⬤ EDIT ME: control intervals
 ds_interval_actual = s_vals_global_path[-1] / N  # actual discretization step (m)
 
-nx = 7        #  px, py, pz, vx, vy, vz, qw, qx, qy, qz
-nu = 2         # yaw_rate (about body z), pitch_rate (about body y)
+nx = 6              # 3 pos + 3 euler angles (roll, pitch, yaw)
+nu = 2         # roll_d, pitch_d, yaw_d, thrust
 
 # ─────────────── SYMBOLS ──────────────
 x  = ca.MX.sym("x", nx)
 u  = ca.MX.sym("u", nu)
-
+T  = ca.MX.sym("T")               # will be appended to w later
 
 # ─────────────── DYNAMICS ──────────────
 def unpack_x(x):
-    # px, py, pz, qw, qx, qy, qz
-    return x[0], x[1], x[2], x[3], x[4], x[5], x[6]
+    # px, py, pz, roll, pitch, yaw 
+    return x[0], x[1], x[2], x[3], x[4], x[5]
 
 def unpack_u(u):
-    # yaw_rate (about body z), pitch_rate (about body y)
+    # second order devs
+    # kurvature (w about local z-axis), w around the x-axis  (so how does the osculating plane tilt about the current x axis)
     return u[0], u[1]
 
 def dynamics_rhs(x, u):
-    px, py, pz, qw, qx, qy, qz = unpack_x(x)
-    yaw_rate, pitch_rate = unpack_u(u)
+    px, py, pz, roll , pitch, yaw = unpack_x(x) # using euler ZYX convention
+    wz, wx = unpack_u(u)
 
-    # Angular velocity in body frame
-    wx, wy, wz = 0, pitch_rate, yaw_rate
+    sin_roll = ca.sin(roll)
+    cos_roll = ca.cos(roll)
+    tan_pitch = ca.tan(pitch)
+    cos_pitch = ca.cos(pitch)
 
-    # Quaternion kinematics
-    dq_w = -0.5 * ( qx*wx + qy*wy + qz*wz )
-    dq_x =  0.5 * ( qw*wx + qy*wz - qz*wy )
-    dq_y =  0.5 * ( qw*wy - qx*wz + qz*wx )
-    dq_z =  0.5 * ( qw*wz + qx*wy - qy*wx )
+    d_roll_ds  = wx + cos_roll * tan_pitch * wz
+    d_pitch_ds = -sin_roll * wz
+    d_yaw_ds   = (cos_roll / cos_pitch) * wz
 
-    # Forward direction (x-axis of body in world frame)
-    fx = 1 - 2*(qy**2 + qz**2)
-    fy = 2*(qx*qy + qw*qz)
-    fz = 2*(qx*qz - qw*qy)
 
-    speed = 1.0  # fixed forward speed [m/s]
+    # determine the derivatives of the position
+    tangent_vector = euler_to_tangent_vector(yaw, pitch)  # get the tangent vector in world coordinates
+    dx_ds = tangent_vector[0]
+    dy_ds = tangent_vector[1]
+    dz_ds = tangent_vector[2]
 
-    dpx = speed * fx
-    dpy = speed * fy
-    dpz = speed * fz
 
-    return ca.vertcat(dpx, dpy, dpz, dq_w, dq_x, dq_y, dq_z)
+    return ca.vertcat(dx_ds, dy_ds, dz_ds, d_roll_ds, d_pitch_ds, d_yaw_ds)  # return the derivatives as a column vector
+
+
+
+
+def euler_to_tangent_vector(yaw, pitch):
+    cy = ca.cos(yaw)
+    sy = ca.sin(yaw)
+    cp = ca.cos(pitch)
+    sp = ca.sin(pitch)
+
+    tangent = ca.vertcat(
+        cy * cp,
+        sy * cp,
+        -sp
+    )
+    return tangent
+
 
 
 
@@ -91,6 +101,7 @@ def rk4(xk, uk, h_step):
     k3 = dynamics_rhs(xk + 0.5*h_step*k2, uk)
     k4 = dynamics_rhs(xk +       h_step*k3, uk)
     return xk + (h_step/6)*(k1 + 2*k2 + 2*k3 + k4)
+
 
 
 # ─────────────── DECISION VECTOR & BOUNDS ──────────────
@@ -109,8 +120,6 @@ norms = np.linalg.norm(np.vstack((dx_ds_4_problem, dy_ds_4_problem, dz_ds_4_prob
 dx_ds_4_problem /= norms
 dy_ds_4_problem /= norms
 dz_ds_4_problem /= norms
-
-
 
 
 
@@ -142,64 +151,17 @@ for gate in gates:
 
 
 
-def quat_from_x_axis(x_axis):
-    """Return a quaternion [qw,qx,qy,qz] that aligns body x-axis with given x_axis."""
-    x_axis = x_axis / np.linalg.norm(x_axis)   # normalize
-    # Default forward axis in world frame
-    ref = np.array([1.0, 0.0, 0.0])
-
-    # Axis of rotation = cross product
-    v = np.cross(ref, x_axis)
-    c = np.dot(ref, x_axis)
-
-    if np.allclose(v, 0):
-        # Already aligned (or opposite)
-        if c > 0:
-            return np.array([1,0,0,0])   # identity
-        else:
-            # 180° rotation around y (or any axis perpendicular to ref)
-            return np.array([0,0,1,0])   # rotate around z
-
-    s = np.sqrt((1+c)*2)
-    qw = 0.5*s
-    qx, qy, qz = v / s
-    return np.array([qw,qx,qy,qz])
-
-
-from scipy.spatial.transform import Rotation as R
-def quat_from_tangent_vec(tangent_vector):
-    # tangent vector (normalized)
-    tangent = tangent_vector # / np.linalg.norm(tangent_vector)
-
-    # compute yaw and pitch from tangent
-    yaw = np.arctan2(tangent[1], tangent[0])          # rotation around z
-    pitch = np.arctan2(-tangent[2], np.sqrt(tangent[0]**2 + tangent[1]**2))  # rotation around y
-    roll = 0.0                                        # roll = 0
-
-    # create quaternion from yaw, pitch, roll (order: 'zyx')
-    r = R.from_euler('zyx', [yaw, pitch, roll])
-    q = r.as_quat()   # returns [x, y, z, w] by default in scipy
-
-    # reorder to [w, x, y, z] for your convention
-    q_wxyz_0 = np.array([q[3], q[0], q[1], q[2]])
-    return q_wxyz_0
-
-
-
-
-
-
 
 
 # define constraint values
 lane_radius = 0.5
-k_max = 0.67*(1.0 / lane_radius)  # maximum curvature (1/m)
+k_max = 1.0 / lane_radius  # maximum curvature (1/m)
 
 # define smoothness weight
-q_actuation = 10
-q_length_path = 100  # path length weight
-q_smoothness = 10  # smoothness weight (1/m)
-#q_norm_penalty = 1000
+q_actuation = 0.1
+q_smoothness = 0.1  # smoothness weight (1/m)
+
+
 
 
 
@@ -207,66 +169,12 @@ q_smoothness = 10  # smoothness weight (1/m)
 w, w0, lbw, ubw = [], [], [], []
 g, lbg, ubg     = [], [], []
 
-# ─────────── 1) Initial state  X0  ─────────
-# centerline_point, tangent_vector, acceleration_vector = generate_path_data_4_solver(0, N)
-# # position guess = centerline point
-# p0 = centerline_point
-# # quaternion guess = align body-x with tangent vector
-# q0 = quat_from_x_axis(tangent_vector)
-# # build initial guess for state [px,py,pz,qw,qx,qy,qz]
-# Xk_guess = np.concatenate([p0, q0])
-
-
-# # initial state on the gate
-# Xk = ca.MX.sym("X0", nx)
-# w  += [Xk]
-# w0 += [*Xk_guess] #[0]*nx
-# lbw+= [-ca.inf]*nx
-# ubw+= [ ca.inf]*nx
-
-
-# First gate info
-first_gate_idx = gates_indexes_4_problem[0]
-gate_center = centreline[first_gate_idx, 0:3]         # position
-tangent_vector = centreline[first_gate_idx, 3:6]      # tangent
-
-# Build quaternion aligned with tangent, roll=0
-# We can rotate x-axis to tangent, roll=0
-
-
-
-
-#q0 = quat_from_x_axis(tangent_vector)  # returns [qw,qx,qy,qz]
-
-# initial state guess
-q_wxyz_0 = quat_from_tangent_vec(tangent_vector)  # returns [qw,qx,qy,qz]
-X0_guess = np.concatenate([gate_center, q_wxyz_0])
-
-# create NLP variable
+# ─────────── 1) Initial state  X0  (free, will match XN) ─────────
 Xk = ca.MX.sym("X0", nx)
 w  += [Xk]
-w0 += list(X0_guess)
+w0 += [0]*nx
 lbw+= [-ca.inf]*nx
 ubw+= [ ca.inf]*nx
-
-# ----- Constraint: X0 exactly on first gate
-g   += [Xk[:3] - gate_center]   
-lbg += [0]*3
-ubg += [0]*3
-
-# # Orientation constraint: x-axis aligned with tangent
-# Forward direction (body x-axis in world frame)
-qw, qx, qy, qz = Xk[3], Xk[4], Xk[5], Xk[6]
-vel_vector = ca.vertcat(
-    1 - 2*(qy**2 + qz**2),
-    2*(qx*qy + qw*qz),
-    2*(qx*qz - qw*qy)
-)
-g   += [ca.dot(vel_vector, tangent_vector)]   # dot = 1 → aligned
-lbg += [1]
-ubg += [1]
-
-
 
 
 
@@ -278,7 +186,7 @@ J = 0
 
 for k in range(N):
     # centre‑line point & tangent vector at stage k
-    centerline_point, tangent_vector, acceleration_vector = generate_path_data_4_solver(k+1, N)    
+    centerline_point, tangent_vector_ref, acceleration_vector = generate_path_data_4_solver(k, N)    
 
     # ---- Δt_k --------------------------------------------------
     dt_k = ca.MX.sym(f"dt_{k}")
@@ -290,25 +198,17 @@ for k in range(N):
     # ---- control Uk ----
     Uk = ca.MX.sym(f"U_{k}", nu)
     w  += [Uk]
-    w0 += [0]*nu               # guess
+    w0 += [0,0]               # guess
     lbw+= [-ca.inf]*nu
-    ubw+= [ca.inf]*nu
+    ubw+= [+ca.inf]*nu
 
     if k == 0:
         U0 = Uk  # store the first control for periodicity constraint later
 
-
     # ----- successor state X_{k+1} ------------------------------
-    # position guess = centerline point
-    p0 = centerline_point
-    # quaternion guess = align body-x with tangent vector
-    #q0 = quat_from_x_axis(tangent_vector)
-    q0 = quat_from_tangent_vec(tangent_vector)  # returns [qw,qx,qy,qz]
-
-
     Xk_next = ca.MX.sym(f"X_{k+1}", nx)
     w  += [Xk_next]
-    w0 += [*p0,*q0] # [0]*nx   #1,0,0,0
+    w0 += [*centerline_point,0,0,0] # initial guess on the centerline    [0]*nx #
     lbw+= [-ca.inf]*nx
     ubw+= [ ca.inf]*nx
 
@@ -318,101 +218,75 @@ for k in range(N):
     lbg += [0]*nx
     ubg += [0]*nx
 
-    # # ----- constraint on quaternion norm (NEW)-------------------------------
-    g   += [Xk[3]**2 + Xk[4]**2 + Xk[5]**2 + Xk[6]**2 - 1]
-    lbg += [0]
-    ubg += [0]
+    # upper bound on curvature radius
+    # g   += [ca.norm_2(Uk)]
+    # lbg += [-ca.inf]  # no lower bound
+    # ubg += [1.0 / lane_radius]  # curvature radius must be less than lane_radius
 
 
-
-
-    # ---- path constraints (example: gate corridor) ---- 
-    pos_err = Xk_next[0:3] - centerline_point
-
-    # forward direction (body x-axis in world frame from quaternion)
-    qw, qx, qy, qz = Xk_next[3], Xk_next[4], Xk_next[5], Xk_next[6]
-    vel_vector = ca.vertcat(
-        1 - 2*(qy**2 + qz**2),
-        2*(qx*qy + qw*qz),
-        2*(qx*qz - qw*qy)
-                        )
-
+    # ---- path constraints (corridor) ---- 
+    tangent_vector_k = euler_to_tangent_vector(Xk[5],Xk[4])
+    pos_err = Xk[0:3] - centerline_point
 
     # Constraint 1: squared distance to centerline (0 at gates)
-    if k+1 in gates_indexes_4_problem:
+    if k in gates_indexes_4_problem:
         g   += [ca.dot(pos_err, pos_err)]
         lbg += [0]                    # minimum distance = 0 (can't be inside-out)
         ubg += [0]                     # maximum distance allowed
 
-        # # must hit gates straight on  (since it's normalized we can remove the constraint on unitary velocity)
-        # g   += [ca.dot(tangent_vector, vel_vector)]
-        # lbg += [1]                    # minimum distance = 0 (can't be inside-out)
-        # ubg += [1]                     # maximum distance allowed
-
-        # add as soft constraint instead
-        J += 1000 * ca.sumsqr(tangent_vector - vel_vector)
+        # must hit gates straight on  (since it's normalized we can remove the constraint on unitary velocity)
+        g   += [ca.dot(tangent_vector_ref, tangent_vector_k)]
+        lbg += [1]                    # minimum distance = 0 (can't be inside-out)
+        ubg += [1]                     # maximum distance allowed
 
     else:
         g   += [ca.dot(pos_err, pos_err)]
-        lbg += [-0.1]                   # it's positive anyway
+        lbg += [0]                    # minimum distance = 0 (can't be inside-out)
         ubg += [lane_radius**2]       # maximum distance allowed
 
-        # Constraint 2: enforce position lies in the normal plane (⊥ to tangent)
-        g   += [ca.dot(tangent_vector, pos_err)]
-        lbg += [0]
-        ubg += [0]
 
-        # # maximum curvature 
-        # g   += [Uk[0], Uk[1]]  # curvature must be less than k_max
-        # lbg += [-k_max,-k_max]  # no lower bound
-        # ubg += [k_max, k_max ] # curvature can be anything up to k_max
+    # Constraint 2: enforce position lies in the normal plane (⊥ to tangent)
+    g   += [ca.dot(tangent_vector_ref, pos_err)]
+    lbg += [0]
+    ubg += [0]
 
-    # # enforce quaternion continuity (avoid sign flip)
-    # g   += [Xk[3]*Xk_next[3] + Xk[4]*Xk_next[4] + Xk[5]*Xk_next[5] + Xk[6]*Xk_next[6]]
-    # lbg += [0]    # enforce >= 0 (CasADi only allows equalities/inequalities, so this is ≥0)
-    # ubg += [ca.inf]
+        # # constraint 3 acceleration must be perpendicular to the tangent vector
+        # g  += [ca.dot(Uk, Xk[3:6])]
+        # lbg += [0]
+        # ubg += [0]
+
+        # constraint 4: velocity must be unit vector
+    
+        # g += [ca.dot(vel_vector, vel_vector)]
+        # lbg += [1.0]
+        # ubg += [1.0]
 
 
 
     # ----- define cost -------------------------------
     #total_time_expr += dt_k
     # ---- actuation cost ----
-    #J += ca.dot(pos_err, pos_err)
-
-    #J += q_norm_penalty * (qw**2 + qx**2 + qy**2 + qz**2 - 1)**2 # this should keep the quaternion normalized
-
-
-    actuation = ca.dot(Uk, Uk)
-    J += q_actuation * actuation**2  # cost of actuation
-    
-
+    J += ca.dot(pos_err, pos_err)
+    #curvature_k = ca.dot(Uk, Uk)
+    J += q_actuation * (Uk[0]**2 + Uk[1]**2)  # penalize the curvature when getting too close to max value
 
     if k > 0:
         J += q_smoothness * ca.sumsqr(Uk - Uk_prev) / ds_interval_actual
-
-        # add cost on path length
-        J += q_length_path * ca.norm_2(Xk_next[0:3] - Xk[0:3])
+    Uk_prev = Uk
 
 
     # next loop
-    Uk_prev = Uk
     Xk = Xk_next
 
 
-# # ─────────── 3) Periodicity: finish == start --------------------
+# ─────────── 3) Periodicity: finish == start --------------------
 g   += [Xk - w[0]]
 lbg += [0]*nx
 ubg += [0]*nx
 
-# also on the inputs
-g   += [Uk - U0]
-lbg += [0]*nu
-ubg += [0]*nu
-
-
 
 # also last input - first input add cost on the jump
-# J += q_smoothness * ca.sumsqr(Uk - U0) / ds_interval_actual  # last input - first input
+J += q_smoothness * ca.sumsqr(Uk - U0) / ds_interval_actual  # last input - first input
 
 
 
@@ -424,9 +298,9 @@ ubg += [0]*nu
 # ─────────────────  Build & solve the NLP  ───────────────────────
 ipopt_opts = {
     "ipopt": {
-        "max_iter": 100,
-        "tol": 1e-4,
-        "acceptable_tol": 1e-4,
+        "max_iter": 4000,
+        "tol": 1e-5,
+        "acceptable_tol": 1e-5,
         "acceptable_iter": 10,
         "max_cpu_time": 1000,
         "mu_init": 1e-3,
@@ -450,6 +324,29 @@ sol    = solver(x0=w0, lbx=lbw, ubx=ubw, lbg=lbg, ubg=ubg)
 
 
 
+
+# w_opt = sol["x"].full().squeeze()
+
+# T_opt = w_opt[-1]
+# print(f"Optimal lap time: {T_opt:.3f} s")
+
+
+
+# state_traj  = np.zeros((N + 1, nx))
+# input_traj  = np.zeros((N,     nu))
+
+# offset = 0
+# for k in range(N):
+#     state_traj[k, :] = w_opt[offset : offset + nx]        # X_k
+#     offset += nx
+#     input_traj[k, :] = w_opt[offset : offset + nu]        # U_k
+#     offset += nu
+
+# state_traj[N, :] = w_opt[offset : offset + nx]            # X_N
+# offset += nx
+
+
+#T_opt = w_opt[offset]
 
 
 
@@ -491,7 +388,7 @@ for k in range(N):
 # build output path
 output_dir = os.path.join(pkg_path, "src", "solvers_setup", "offline_optimal_solutions")
 os.makedirs(output_dir, exist_ok=True)
-output_file = os.path.join(output_dir, f"{track_choice}_optimally_smoothed_quaternions.npy")  # ← .npy
+output_file = os.path.join(output_dir, f"{track_choice}_reference_path_euler.npy")  # ← .npy
 
 # assemble the array exactly as before
 input_traj_2_save           = np.vstack((input_traj, input_traj[-1, :]))  # pad last input
@@ -505,9 +402,6 @@ optimal_traj   = np.column_stack((optimal_traj, s_vals_optimal_path))
 # save a single array to .npy
 np.save(output_file, optimal_traj)
 
-print()
-print('---')
-print("Optimal trajectory saved to:", output_file)
 
 
 
@@ -515,51 +409,47 @@ print("Optimal trajectory saved to:", output_file)
 
 
 
-
-
-
-# # # build output path
-# # output_dir = os.path.join(pkg_path, "src", "solvers_setup", "offline_optimal_solutions")
-# # os.makedirs(output_dir, exist_ok=True)
-# # output_file = os.path.join(output_dir, f"{track_choice}.npy")  # ← .npy
-
-# # # assemble the array exactly as before
-# # input_traj_2_save           = np.vstack((input_traj, input_traj[-1, :]))  # pad last input
-# # optimal_action_state_traj   = np.hstack((input_traj_2_save, state_traj))
-# # # add a column with the path progress values and timestep (equally spaced by construction)
-# # s_vec = np.linspace(0, s_vals_global_path[-1], N + 1)
-# # #time_vec                    = np.linspace(0, T_opt, N + 1)
-# # optimal_action_state_traj   = np.column_stack((optimal_action_state_traj, s_vec, time_vec))
-
-
-# # #
-# # # save a single array to .npy
-# # np.save(output_file, optimal_action_state_traj)
 
 
 
 
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D              # noqa: F401
+from mpl_toolkits.mplot3d import Axes3D              
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 # ───────────── Prepare data ─────────────
 x, y, z = state_traj[:, 0], state_traj[:, 1], state_traj[:, 2]
 
+# evaluate vx, vy, vz as tangent vectors using euler_to_tangent_vector(yaw, pitch)
+vx, vy, vz = [], [], []
+for k in range(N+1):
+    # unpack the state
+    roll, pitch, yaw = state_traj[k, 3], state_traj[k, 4], state_traj[k, 5]
+    tangent_vector = euler_to_tangent_vector(yaw, pitch)
+
+    vx.append(tangent_vector[0])
+    vy.append(tangent_vector[1])
+    vz.append(tangent_vector[2]) 
+
+
+
+#vx, vy, vz = state_traj[:, 3], state_traj[:, 4], state_traj[:, 5]
+#speed = np.linalg.norm(state_traj[:, 3:6], axis=1)
+
 # Control (accelerations): assumed shape (N, 3)
-wz,wy = input_traj[:, 0], input_traj[:, 1]
+#acc_x, acc_y, acc_z = input_traj[:, 0], input_traj[:, 1], input_traj[:, 2]
+#acc = np.vstack((acc_x, acc_y, acc_z)).T
 
 
+curvature = input_traj[:,0]  # Avoid division by zero
 
-#curvature = np.linalg.norm(acc, axis=1) + 1e-8  # Avoid division by zero
+#Compute curvature radius = 1 / ||acc||
+curvature_radius = 1.0 / curvature
 
-# # Compute curvature radius = 1 / ||acc||
-# curvature_radius = 1.0 / curvature
-
-# # Pad last element to match state length
-# curvature = np.append(curvature, curvature[-1])
-# curvature_radius = np.append(curvature_radius, curvature_radius[-1])
+# Pad last element to match state length
+curvature = np.append(curvature, curvature[-1])
+curvature_radius = np.append(curvature_radius, curvature_radius[-1])
 
 # ───────────── Build line segments for color line ─────────────
 points = np.column_stack((x, y, z))
@@ -568,9 +458,9 @@ segments = np.stack([points[:-1], points[1:]], axis=1)
 lc = Line3DCollection(
     segments,
     cmap='plasma',
-    norm=plt.Normalize(vmin=np.min(wz), vmax=np.max(wz))
+    norm=plt.Normalize(vmin=np.min(curvature), vmax=np.max(curvature))
 )
-lc.set_array(wz[:-1])  # color per segment
+lc.set_array(curvature[:-1])  # color per segment
 lc.set_linewidth(5.0)
 
 # ───────────── Start Plot ─────────────
@@ -586,37 +476,30 @@ ax_3d.plot(x_4_problem, y_4_problem, z_4_problem, color='gray', lw=1.5, label='O
 # 2. New (optimized) path in black
 #ax_3d.plot(x, y, z, color='black', lw=2.5, label='Optimized Path')
 
-# # 3. Tangent vectors (true magnitude)
-# skip = max(1, len(x) // 50)
-# ax_3d.quiver(
-#     x[::skip], y[::skip], z[::skip],
-#     vx[::skip], vy[::skip], vz[::skip],
-#     normalize=False, color='darkgoldenrod',
-#     arrow_length_ratio=0.1, linewidth=1,
-#     label='Tangent vectors'
-# )
+# 3. Tangent vectors (true magnitude)
+skip = max(1, len(x) // 50)
+# # ax_3d.quiver(
+# #     x[::skip], y[::skip], z[::skip],
+# #     vx[::skip], vy[::skip], vz[::skip],
+# #     normalize=False, color='darkgoldenrod',
+# #     arrow_length_ratio=0.1, linewidth=1,
+# #     label='Tangent vectors'
+# # )
 
-# # 4. Second-order derivatives (true magnitude, scaled using curvature trick)
-# scale_factor = 1 / curvature[:-1]
-# scaled_ax = acc_x * scale_factor**2
-# scaled_ay = acc_y * scale_factor**2
-# scaled_az = acc_z * scale_factor**2
+# # # 4. Second-order derivatives (true magnitude, scaled using curvature trick)
+# # scale_factor = 1 / curvature[:-1]
+# # scaled_ax = acc_x * scale_factor**2
+# # scaled_ay = acc_y * scale_factor**2
+# # scaled_az = acc_z * scale_factor**2
+
 
 # # ax_3d.quiver(
 # #     x[:-1:skip], y[:-1:skip], z[:-1:skip],
-# #     scaled_ax[::skip], scaled_ay[::skip], scaled_az[::skip],
-# #     normalize=False, color='tan',
-# #     arrow_length_ratio=0.1, linewidth=0.8,
+# #     acc_x[::skip], acc_y[::skip], acc_z[::skip],
+# #     normalize=False, color='orangered',
+# #     arrow_length_ratio=0.1, linewidth=1,
 # #     label='Second-order derivatives'
 # # )
-
-# ax_3d.quiver(
-#     x[:-1:skip], y[:-1:skip], z[:-1:skip],
-#     acc_x[::skip], acc_y[::skip], acc_z[::skip],
-#     normalize=False, color='orangered',
-#     arrow_length_ratio=0.1, linewidth=1,
-#     label='Second-order derivatives'
-# )
 
 
 
@@ -686,44 +569,7 @@ add_gate_circles(ax_3d, gates, lane_radius=lane_radius, color='lightsteelblue')
 
 
 
-
-
-
-
-
-
-
-
-# Create figure
-fig2, axes2 = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-fig2.suptitle("Angular Velocities", fontsize=15)
-
-# Plot yaw rate
-axes2[0].plot(s_4_problem, input_traj_2_save[:,0], color='darkgreen', label='Yaw rate (rad/s)')
-axes2[0].set_xlim([s_4_problem[0], s_4_problem[-1]])
-axes2[0].set_ylabel("Yaw rate [rad/s]")
-axes2[0].set_title("Yaw rate over path")
-axes2[0].grid(True)
-axes2[0].legend()
-
-# Plot pitch rate
-axes2[1].plot(s_4_problem, input_traj_2_save[:,1], color='orangered', label='Pitch rate (rad/s)')
-axes2[1].set_ylabel("Pitch rate [rad/s]")
-axes2[1].set_xlabel("s [m]")
-axes2[1].set_title("Pitch rate over path")
-axes2[1].grid(True)
-axes2[1].legend()
-
-plt.tight_layout(rect=[0, 0, 1, 0.95])
-
-
 plt.show()
-
-
-
-
-
-
 
 
 
@@ -734,8 +580,8 @@ t = s_4_problem
 
 # Extract data
 x, y, z     = state_traj[:, 0], state_traj[:, 1], state_traj[:, 2]
-# vx, vy, vz  = state_traj[:, 3], state_traj[:, 4], state_traj[:, 5]
-# ax, ay, az  = input_traj[:, 0], input_traj[:, 1], input_traj[:, 2]
+vx, vy, vz  = state_traj[:, 3], state_traj[:, 4], state_traj[:, 5]
+ax, ay, az  = input_traj[:, 0], input_traj[:, 1], input_traj[:, 2]
 
 # Setup figure and axes
 fig, axes = plt.subplots(3, 3, figsize=(15, 10), sharex=True)
@@ -744,8 +590,8 @@ fig.suptitle("Trajectory States and Inputs", fontsize=16)
 # Labels for rows and columns
 components = ['X', 'Y', 'Z']
 positions = [x, y, z]
-# velocities = [vx, vy, vz]
-# accelerations = [ax, ay, az]
+velocities = [vx, vy, vz]
+accelerations = [ax, ay, az]
 # copy last acceleration to match time vector length
 accelerations = [np.append(a, a[-1]) for a in accelerations]  # pad last element
 

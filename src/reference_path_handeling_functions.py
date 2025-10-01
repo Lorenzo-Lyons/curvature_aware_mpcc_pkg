@@ -6,7 +6,7 @@ from scipy.interpolate import CubicSpline
 from scipy.interpolate import make_interp_spline
 import roslib
 import os
-pkg_path = roslib.packages.get_pkg_dir('racing_campcc_pkg')
+pkg_path = roslib.packages.get_pkg_dir('curvature_aware_mpcc_pkg')
 
 
 

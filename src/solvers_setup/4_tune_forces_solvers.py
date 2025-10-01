@@ -136,7 +136,7 @@ config_mpc = GUI_mpc_node.get_configuration()
 # # # load optimal trajectory paraemters
 # # import roslib
 # # import sys
-# # pkg_path = roslib.packages.get_pkg_dir('racing_campcc_pkg')
+# # pkg_path = roslib.packages.get_pkg_dir('curvature_aware_mpcc_pkg')
 # # sys.path.append(os.path.join(pkg_path, 'src'))     # or whatever sub‑folder holds the module
 # # from reference_path_handeling_functions import generate_path_data
 

@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>racing_campcc_pkg</name>
+  <name>curvature_aware_mpcc_pkg</name>
   <version>0.0.0</version>
-  <description>The racing_campcc_pkg package</description>
+  <description>The curvature_aware_mpcc_pkg package</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <!-- Example:  -->

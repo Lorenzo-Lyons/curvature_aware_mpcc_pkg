@@ -3,7 +3,7 @@ import os
 import matplotlib.pyplot as plt
 import sys
 import roslib
-pkg_path = roslib.packages.get_pkg_dir('racing_campcc_pkg')
+pkg_path = roslib.packages.get_pkg_dir('curvature_aware_mpcc_pkg')
 sys.path.append(os.path.join(pkg_path, 'src'))    
 
 from mpc_node import MPCC_controller_class

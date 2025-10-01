@@ -203,7 +203,7 @@ class Forward_intergrate_drone:
         marker.header.stamp = rospy.Time.now()    # associate a timestamp to the frame
 
         marker.type = marker.MESH_RESOURCE
-        marker.mesh_resource = "package://racing_campcc_pkg/src/Dae_models/quadrotor_base.dae"
+        marker.mesh_resource = "package://curvature_aware_mpcc_pkg/src/Dae_models/quadrotor_base.dae"
         marker.id = 1
 
         # Set the scale of the marker
