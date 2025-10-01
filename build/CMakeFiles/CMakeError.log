@@ -1332,3 +1332,583 @@ make: *** [Makefile:121: cmTC_e247d/fast] Error 2
 
 
 
+Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_82d61/fast && /usr/bin/make -f CMakeFiles/cmTC_82d61.dir/build.make CMakeFiles/cmTC_82d61.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_82d61.dir/src.c.o
+/usr/bin/cc   -DCMAKE_HAVE_LIBC_PTHREAD   -o CMakeFiles/cmTC_82d61.dir/src.c.o   -c /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_82d61
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_82d61.dir/link.txt --verbose=1
+/usr/bin/cc  -DCMAKE_HAVE_LIBC_PTHREAD    -rdynamic CMakeFiles/cmTC_82d61.dir/src.c.o  -o cmTC_82d61 
+/usr/bin/ld: CMakeFiles/cmTC_82d61.dir/src.c.o: in function `main':
+src.c:(.text+0x46): undefined reference to `pthread_create'
+/usr/bin/ld: src.c:(.text+0x52): undefined reference to `pthread_detach'
+/usr/bin/ld: src.c:(.text+0x63): undefined reference to `pthread_join'
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_82d61.dir/build.make:87: cmTC_82d61] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_82d61/fast] Error 2
+
+
+Source file was:
+#include <pthread.h>
+
+void* test_func(void* data)
+{
+  return data;
+}
+
+int main(void)
+{
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_func, NULL);
+  pthread_detach(thread);
+  pthread_join(thread, NULL);
+  pthread_atfork(NULL, NULL, NULL);
+  pthread_exit(NULL);
+
+  return 0;
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_77e87/fast && /usr/bin/make -f CMakeFiles/cmTC_77e87.dir/build.make CMakeFiles/cmTC_77e87.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_77e87.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create   -o CMakeFiles/cmTC_77e87.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.16/Modules/CheckFunctionExists.c
+Linking C executable cmTC_77e87
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_77e87.dir/link.txt --verbose=1
+/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_77e87.dir/CheckFunctionExists.c.o  -o cmTC_77e87  -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_77e87.dir/build.make:87: cmTC_77e87] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_77e87/fast] Error 2
+
+
+
+Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_7f4a0/fast && /usr/bin/make -f CMakeFiles/cmTC_7f4a0.dir/build.make CMakeFiles/cmTC_7f4a0.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_7f4a0.dir/src.c.o
+/usr/bin/cc   -DCMAKE_HAVE_LIBC_PTHREAD   -o CMakeFiles/cmTC_7f4a0.dir/src.c.o   -c /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_7f4a0
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_7f4a0.dir/link.txt --verbose=1
+/usr/bin/cc  -DCMAKE_HAVE_LIBC_PTHREAD    -rdynamic CMakeFiles/cmTC_7f4a0.dir/src.c.o  -o cmTC_7f4a0 
+/usr/bin/ld: CMakeFiles/cmTC_7f4a0.dir/src.c.o: in function `main':
+src.c:(.text+0x46): undefined reference to `pthread_create'
+/usr/bin/ld: src.c:(.text+0x52): undefined reference to `pthread_detach'
+/usr/bin/ld: src.c:(.text+0x63): undefined reference to `pthread_join'
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_7f4a0.dir/build.make:87: cmTC_7f4a0] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_7f4a0/fast] Error 2
+
+
+Source file was:
+#include <pthread.h>
+
+void* test_func(void* data)
+{
+  return data;
+}
+
+int main(void)
+{
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_func, NULL);
+  pthread_detach(thread);
+  pthread_join(thread, NULL);
+  pthread_atfork(NULL, NULL, NULL);
+  pthread_exit(NULL);
+
+  return 0;
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_96e22/fast && /usr/bin/make -f CMakeFiles/cmTC_96e22.dir/build.make CMakeFiles/cmTC_96e22.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_96e22.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create   -o CMakeFiles/cmTC_96e22.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.16/Modules/CheckFunctionExists.c
+Linking C executable cmTC_96e22
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_96e22.dir/link.txt --verbose=1
+/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_96e22.dir/CheckFunctionExists.c.o  -o cmTC_96e22  -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_96e22.dir/build.make:87: cmTC_96e22] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_96e22/fast] Error 2
+
+
+
+Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_6162b/fast && /usr/bin/make -f CMakeFiles/cmTC_6162b.dir/build.make CMakeFiles/cmTC_6162b.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_6162b.dir/src.c.o
+/usr/bin/cc   -DCMAKE_HAVE_LIBC_PTHREAD   -o CMakeFiles/cmTC_6162b.dir/src.c.o   -c /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_6162b
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_6162b.dir/link.txt --verbose=1
+/usr/bin/cc  -DCMAKE_HAVE_LIBC_PTHREAD    -rdynamic CMakeFiles/cmTC_6162b.dir/src.c.o  -o cmTC_6162b 
+/usr/bin/ld: CMakeFiles/cmTC_6162b.dir/src.c.o: in function `main':
+src.c:(.text+0x46): undefined reference to `pthread_create'
+/usr/bin/ld: src.c:(.text+0x52): undefined reference to `pthread_detach'
+/usr/bin/ld: src.c:(.text+0x63): undefined reference to `pthread_join'
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_6162b.dir/build.make:87: cmTC_6162b] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_6162b/fast] Error 2
+
+
+Source file was:
+#include <pthread.h>
+
+void* test_func(void* data)
+{
+  return data;
+}
+
+int main(void)
+{
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_func, NULL);
+  pthread_detach(thread);
+  pthread_join(thread, NULL);
+  pthread_atfork(NULL, NULL, NULL);
+  pthread_exit(NULL);
+
+  return 0;
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_22c9d/fast && /usr/bin/make -f CMakeFiles/cmTC_22c9d.dir/build.make CMakeFiles/cmTC_22c9d.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_22c9d.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create   -o CMakeFiles/cmTC_22c9d.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.16/Modules/CheckFunctionExists.c
+Linking C executable cmTC_22c9d
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_22c9d.dir/link.txt --verbose=1
+/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_22c9d.dir/CheckFunctionExists.c.o  -o cmTC_22c9d  -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_22c9d.dir/build.make:87: cmTC_22c9d] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_22c9d/fast] Error 2
+
+
+
+Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_92108/fast && /usr/bin/make -f CMakeFiles/cmTC_92108.dir/build.make CMakeFiles/cmTC_92108.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_92108.dir/src.c.o
+/usr/bin/cc   -DCMAKE_HAVE_LIBC_PTHREAD   -o CMakeFiles/cmTC_92108.dir/src.c.o   -c /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_92108
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_92108.dir/link.txt --verbose=1
+/usr/bin/cc  -DCMAKE_HAVE_LIBC_PTHREAD    -rdynamic CMakeFiles/cmTC_92108.dir/src.c.o  -o cmTC_92108 
+/usr/bin/ld: CMakeFiles/cmTC_92108.dir/src.c.o: in function `main':
+src.c:(.text+0x46): undefined reference to `pthread_create'
+/usr/bin/ld: src.c:(.text+0x52): undefined reference to `pthread_detach'
+/usr/bin/ld: src.c:(.text+0x63): undefined reference to `pthread_join'
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_92108.dir/build.make:87: cmTC_92108] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_92108/fast] Error 2
+
+
+Source file was:
+#include <pthread.h>
+
+void* test_func(void* data)
+{
+  return data;
+}
+
+int main(void)
+{
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_func, NULL);
+  pthread_detach(thread);
+  pthread_join(thread, NULL);
+  pthread_atfork(NULL, NULL, NULL);
+  pthread_exit(NULL);
+
+  return 0;
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_c32d6/fast && /usr/bin/make -f CMakeFiles/cmTC_c32d6.dir/build.make CMakeFiles/cmTC_c32d6.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_c32d6.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create   -o CMakeFiles/cmTC_c32d6.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.16/Modules/CheckFunctionExists.c
+Linking C executable cmTC_c32d6
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_c32d6.dir/link.txt --verbose=1
+/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_c32d6.dir/CheckFunctionExists.c.o  -o cmTC_c32d6  -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_c32d6.dir/build.make:87: cmTC_c32d6] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_c32d6/fast] Error 2
+
+
+
+Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_0d1b6/fast && /usr/bin/make -f CMakeFiles/cmTC_0d1b6.dir/build.make CMakeFiles/cmTC_0d1b6.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_0d1b6.dir/src.c.o
+/usr/bin/cc   -DCMAKE_HAVE_LIBC_PTHREAD   -o CMakeFiles/cmTC_0d1b6.dir/src.c.o   -c /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_0d1b6
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_0d1b6.dir/link.txt --verbose=1
+/usr/bin/cc  -DCMAKE_HAVE_LIBC_PTHREAD    -rdynamic CMakeFiles/cmTC_0d1b6.dir/src.c.o  -o cmTC_0d1b6 
+/usr/bin/ld: CMakeFiles/cmTC_0d1b6.dir/src.c.o: in function `main':
+src.c:(.text+0x46): undefined reference to `pthread_create'
+/usr/bin/ld: src.c:(.text+0x52): undefined reference to `pthread_detach'
+/usr/bin/ld: src.c:(.text+0x63): undefined reference to `pthread_join'
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_0d1b6.dir/build.make:87: cmTC_0d1b6] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_0d1b6/fast] Error 2
+
+
+Source file was:
+#include <pthread.h>
+
+void* test_func(void* data)
+{
+  return data;
+}
+
+int main(void)
+{
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_func, NULL);
+  pthread_detach(thread);
+  pthread_join(thread, NULL);
+  pthread_atfork(NULL, NULL, NULL);
+  pthread_exit(NULL);
+
+  return 0;
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_f1ec8/fast && /usr/bin/make -f CMakeFiles/cmTC_f1ec8.dir/build.make CMakeFiles/cmTC_f1ec8.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_f1ec8.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create   -o CMakeFiles/cmTC_f1ec8.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.16/Modules/CheckFunctionExists.c
+Linking C executable cmTC_f1ec8
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f1ec8.dir/link.txt --verbose=1
+/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_f1ec8.dir/CheckFunctionExists.c.o  -o cmTC_f1ec8  -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_f1ec8.dir/build.make:87: cmTC_f1ec8] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_f1ec8/fast] Error 2
+
+
+
+Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_06c0d/fast && /usr/bin/make -f CMakeFiles/cmTC_06c0d.dir/build.make CMakeFiles/cmTC_06c0d.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_06c0d.dir/src.c.o
+/usr/bin/cc   -DCMAKE_HAVE_LIBC_PTHREAD   -o CMakeFiles/cmTC_06c0d.dir/src.c.o   -c /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_06c0d
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_06c0d.dir/link.txt --verbose=1
+/usr/bin/cc  -DCMAKE_HAVE_LIBC_PTHREAD    -rdynamic CMakeFiles/cmTC_06c0d.dir/src.c.o  -o cmTC_06c0d 
+/usr/bin/ld: CMakeFiles/cmTC_06c0d.dir/src.c.o: in function `main':
+src.c:(.text+0x46): undefined reference to `pthread_create'
+/usr/bin/ld: src.c:(.text+0x52): undefined reference to `pthread_detach'
+/usr/bin/ld: src.c:(.text+0x63): undefined reference to `pthread_join'
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_06c0d.dir/build.make:87: cmTC_06c0d] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_06c0d/fast] Error 2
+
+
+Source file was:
+#include <pthread.h>
+
+void* test_func(void* data)
+{
+  return data;
+}
+
+int main(void)
+{
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_func, NULL);
+  pthread_detach(thread);
+  pthread_join(thread, NULL);
+  pthread_atfork(NULL, NULL, NULL);
+  pthread_exit(NULL);
+
+  return 0;
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_2175d/fast && /usr/bin/make -f CMakeFiles/cmTC_2175d.dir/build.make CMakeFiles/cmTC_2175d.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_2175d.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create   -o CMakeFiles/cmTC_2175d.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.16/Modules/CheckFunctionExists.c
+Linking C executable cmTC_2175d
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_2175d.dir/link.txt --verbose=1
+/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_2175d.dir/CheckFunctionExists.c.o  -o cmTC_2175d  -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_2175d.dir/build.make:87: cmTC_2175d] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_2175d/fast] Error 2
+
+
+
+Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_4eb22/fast && /usr/bin/make -f CMakeFiles/cmTC_4eb22.dir/build.make CMakeFiles/cmTC_4eb22.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_4eb22.dir/src.c.o
+/usr/bin/cc   -DCMAKE_HAVE_LIBC_PTHREAD   -o CMakeFiles/cmTC_4eb22.dir/src.c.o   -c /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_4eb22
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_4eb22.dir/link.txt --verbose=1
+/usr/bin/cc  -DCMAKE_HAVE_LIBC_PTHREAD    -rdynamic CMakeFiles/cmTC_4eb22.dir/src.c.o  -o cmTC_4eb22 
+/usr/bin/ld: CMakeFiles/cmTC_4eb22.dir/src.c.o: in function `main':
+src.c:(.text+0x46): undefined reference to `pthread_create'
+/usr/bin/ld: src.c:(.text+0x52): undefined reference to `pthread_detach'
+/usr/bin/ld: src.c:(.text+0x63): undefined reference to `pthread_join'
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_4eb22.dir/build.make:87: cmTC_4eb22] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_4eb22/fast] Error 2
+
+
+Source file was:
+#include <pthread.h>
+
+void* test_func(void* data)
+{
+  return data;
+}
+
+int main(void)
+{
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_func, NULL);
+  pthread_detach(thread);
+  pthread_join(thread, NULL);
+  pthread_atfork(NULL, NULL, NULL);
+  pthread_exit(NULL);
+
+  return 0;
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_1acdd/fast && /usr/bin/make -f CMakeFiles/cmTC_1acdd.dir/build.make CMakeFiles/cmTC_1acdd.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_1acdd.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create   -o CMakeFiles/cmTC_1acdd.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.16/Modules/CheckFunctionExists.c
+Linking C executable cmTC_1acdd
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_1acdd.dir/link.txt --verbose=1
+/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_1acdd.dir/CheckFunctionExists.c.o  -o cmTC_1acdd  -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_1acdd.dir/build.make:87: cmTC_1acdd] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_1acdd/fast] Error 2
+
+
+
+Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_560a4/fast && /usr/bin/make -f CMakeFiles/cmTC_560a4.dir/build.make CMakeFiles/cmTC_560a4.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_560a4.dir/src.c.o
+/usr/bin/cc   -DCMAKE_HAVE_LIBC_PTHREAD   -o CMakeFiles/cmTC_560a4.dir/src.c.o   -c /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_560a4
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_560a4.dir/link.txt --verbose=1
+/usr/bin/cc  -DCMAKE_HAVE_LIBC_PTHREAD    -rdynamic CMakeFiles/cmTC_560a4.dir/src.c.o  -o cmTC_560a4 
+/usr/bin/ld: CMakeFiles/cmTC_560a4.dir/src.c.o: in function `main':
+src.c:(.text+0x46): undefined reference to `pthread_create'
+/usr/bin/ld: src.c:(.text+0x52): undefined reference to `pthread_detach'
+/usr/bin/ld: src.c:(.text+0x63): undefined reference to `pthread_join'
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_560a4.dir/build.make:87: cmTC_560a4] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_560a4/fast] Error 2
+
+
+Source file was:
+#include <pthread.h>
+
+void* test_func(void* data)
+{
+  return data;
+}
+
+int main(void)
+{
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_func, NULL);
+  pthread_detach(thread);
+  pthread_join(thread, NULL);
+  pthread_atfork(NULL, NULL, NULL);
+  pthread_exit(NULL);
+
+  return 0;
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_f501e/fast && /usr/bin/make -f CMakeFiles/cmTC_f501e.dir/build.make CMakeFiles/cmTC_f501e.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_f501e.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create   -o CMakeFiles/cmTC_f501e.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.16/Modules/CheckFunctionExists.c
+Linking C executable cmTC_f501e
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f501e.dir/link.txt --verbose=1
+/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_f501e.dir/CheckFunctionExists.c.o  -o cmTC_f501e  -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_f501e.dir/build.make:87: cmTC_f501e] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_f501e/fast] Error 2
+
+
+
+Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_c3d51/fast && /usr/bin/make -f CMakeFiles/cmTC_c3d51.dir/build.make CMakeFiles/cmTC_c3d51.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_c3d51.dir/src.c.o
+/usr/bin/cc   -DCMAKE_HAVE_LIBC_PTHREAD   -o CMakeFiles/cmTC_c3d51.dir/src.c.o   -c /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_c3d51
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_c3d51.dir/link.txt --verbose=1
+/usr/bin/cc  -DCMAKE_HAVE_LIBC_PTHREAD    -rdynamic CMakeFiles/cmTC_c3d51.dir/src.c.o  -o cmTC_c3d51 
+/usr/bin/ld: CMakeFiles/cmTC_c3d51.dir/src.c.o: in function `main':
+src.c:(.text+0x46): undefined reference to `pthread_create'
+/usr/bin/ld: src.c:(.text+0x52): undefined reference to `pthread_detach'
+/usr/bin/ld: src.c:(.text+0x63): undefined reference to `pthread_join'
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_c3d51.dir/build.make:87: cmTC_c3d51] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_c3d51/fast] Error 2
+
+
+Source file was:
+#include <pthread.h>
+
+void* test_func(void* data)
+{
+  return data;
+}
+
+int main(void)
+{
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_func, NULL);
+  pthread_detach(thread);
+  pthread_join(thread, NULL);
+  pthread_atfork(NULL, NULL, NULL);
+  pthread_exit(NULL);
+
+  return 0;
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_88eb4/fast && /usr/bin/make -f CMakeFiles/cmTC_88eb4.dir/build.make CMakeFiles/cmTC_88eb4.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_88eb4.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create   -o CMakeFiles/cmTC_88eb4.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.16/Modules/CheckFunctionExists.c
+Linking C executable cmTC_88eb4
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_88eb4.dir/link.txt --verbose=1
+/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_88eb4.dir/CheckFunctionExists.c.o  -o cmTC_88eb4  -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_88eb4.dir/build.make:87: cmTC_88eb4] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_88eb4/fast] Error 2
+
+
+
+Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_ccbd3/fast && /usr/bin/make -f CMakeFiles/cmTC_ccbd3.dir/build.make CMakeFiles/cmTC_ccbd3.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_ccbd3.dir/src.c.o
+/usr/bin/cc   -DCMAKE_HAVE_LIBC_PTHREAD   -o CMakeFiles/cmTC_ccbd3.dir/src.c.o   -c /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_ccbd3
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_ccbd3.dir/link.txt --verbose=1
+/usr/bin/cc  -DCMAKE_HAVE_LIBC_PTHREAD    -rdynamic CMakeFiles/cmTC_ccbd3.dir/src.c.o  -o cmTC_ccbd3 
+/usr/bin/ld: CMakeFiles/cmTC_ccbd3.dir/src.c.o: in function `main':
+src.c:(.text+0x46): undefined reference to `pthread_create'
+/usr/bin/ld: src.c:(.text+0x52): undefined reference to `pthread_detach'
+/usr/bin/ld: src.c:(.text+0x63): undefined reference to `pthread_join'
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_ccbd3.dir/build.make:87: cmTC_ccbd3] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_ccbd3/fast] Error 2
+
+
+Source file was:
+#include <pthread.h>
+
+void* test_func(void* data)
+{
+  return data;
+}
+
+int main(void)
+{
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_func, NULL);
+  pthread_detach(thread);
+  pthread_join(thread, NULL);
+  pthread_atfork(NULL, NULL, NULL);
+  pthread_exit(NULL);
+
+  return 0;
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_ea8a7/fast && /usr/bin/make -f CMakeFiles/cmTC_ea8a7.dir/build.make CMakeFiles/cmTC_ea8a7.dir/build
+make[1]: Entering directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_ea8a7.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create   -o CMakeFiles/cmTC_ea8a7.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.16/Modules/CheckFunctionExists.c
+Linking C executable cmTC_ea8a7
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_ea8a7.dir/link.txt --verbose=1
+/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_ea8a7.dir/CheckFunctionExists.c.o  -o cmTC_ea8a7  -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_ea8a7.dir/build.make:87: cmTC_ea8a7] Error 1
+make[1]: Leaving directory '/home/lorenzo/OneDrive/PhD/Code/CAMPCC_ws/src/curvature_aware_mpcc_pkg/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_ea8a7/fast] Error 2
+
+
+

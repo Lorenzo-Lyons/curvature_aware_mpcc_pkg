@@ -1198,8 +1198,8 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
                             
         # if self.dynamic_model == "dynamic_bicycle_GP":
         #                         # pos_x ,pos_y, yaw, vx,    vy,  w,     s,    ref_x,ref_y,ref_heading
-        #     self.x_l = np.array([-1000,-1000, -1000,-1000, -0.5, -1000 ,-1000,-1000,-1000,-1000])
-        #     self.x_u = np.array([ 1000, 1000,  1000, 1000, +0.5, +1000, 1000,+1000,+1000,+1000])
+        #     self.x_l = np.array([-1000,-1000, -1000,-1000, -0.3, -1000 ,-1000,-1000,-1000,-1000])
+        #     self.x_u = np.array([ 1000, 1000,  1000, 1000, +0.3, +1000, 1000,+1000,+1000,+1000])
         # else:
         self.x_l = -np.infty * np.ones(self.nx)
         self.x_u = +np.infty * np.ones(self.nx)
@@ -1386,7 +1386,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # Set dynamic constraint
         #if self.actuator_dynamics:
         #if self.dynamic_model == "kinematic_bicycle" or self.dynamic_model =="dynamic_bicycle":
-        self.discrete_dynamics_intermediate_shooting_vehicle = 8
+        self.discrete_dynamics_intermediate_shooting_vehicle = 10
         # elif self.dynamic_model == "dynamic_bicycle_GP":
         #      self.discrete_dynamics_intermediate_shooting_vehicle = 1 
 
@@ -1398,7 +1398,7 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # print('discrete_dynamics_intermediate_shooting_vehicle: ', self.discrete_dynamics_intermediate_shooting_vehicle)
         # print('discrete_dynamics_intermediate_shooting_vehicle_GP: ', self.discrete_dynamics_intermediate_shooting_vehicle_GP)
         # print('discrete_dynamics_intermediate_shooting_path: ', self.discrete_dynamics_intermediate_shooting_path)
-        # model.eq = self.single_layer_discrete_dynamics_forces
+        #model.eq = self.single_layer_discrete_dynamics_forces
         # else:
         model.continuous_dynamics = self.single_layer_planner_continous_dynamics_forces
 
@@ -1408,8 +1408,10 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         # Set non linear constraints
         model.nh = self.n_inequality_constraints
         if self.dynamic_model == "dynamic_bicycle" or self.dynamic_model == "kinematic_bicycle":
+            print('using physics-based model constraints')
             model.ineq = self.non_lin_constraint_forces
         elif self.dynamic_model == "dynamic_bicycle_GP":
+            print('using GP model constraints')
             model.ineq = self.non_lin_constraint_forces_GP
         
         model.hl = np.zeros(self.n_inequality_constraints)   #np.array([0.0,0.0,0.0])
@@ -1420,10 +1422,11 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
 
         #if self.actuator_dynamics == False:
         # continuous dynamics options
-        codeoptions.nlp.integrator.type = 'ForwardEuler' #'ERK4' #'ForwardEuler' #'ERK4' #'IRK2' # 'ForwardEuler' #
         codeoptions.nlp.integrator.Ts = self.time_horizon / (self.N+1)
-        codeoptions.nlp.integrator.nodes = 5 # intermediate nodes for the integrator
-
+        codeoptions.nlp.integrator.type = 'ForwardEuler' #'ERK4' #'ForwardEuler' #'ERK4' #'IRK2' # 'ForwardEuler' #
+        codeoptions.nlp.integrator.nodes = 8 # intermediate nodes for the integrator
+        # codeoptions.nlp.integrator.type = 'ERK4' #'ERK4' #'ForwardEuler' #'ERK4' #'IRK2' # 'ForwardEuler' #
+        # codeoptions.nlp.integrator.nodes = 1 # intermediate nodes for the integrator
 
         codeoptions.name = self.solver_name_forces
         codeoptions.printlevel = 0  #  1: summary line after each solve,   0: no prit
@@ -1546,9 +1549,9 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
             + q_v * (s_dot-10)**2  # much better like this than - q_v * s_dot**2\
             #+ q_v * (vx-4)**2\
             
-            
+
         return j
-    
+
     def objective_forces(self, z, p):
         th_input,st_input,slack,pos_x,pos_y,yaw,vx,vy,w,s,ref_x,ref_y,ref_heading, th_past, st_past = self.unpack_state(z)
         local_path_length, q_con, q_u, q_acc, qt_pos, qt_rot, lane_width, qt_s_high, q_v,labels_k = self.unpack_parameters(p)
@@ -1800,15 +1803,9 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
                 elif self.dynamic_model == "dynamic_bicycle":
                     pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)
                 
-                # elif self.dynamic_model == "dynamic_bicycle_GP": # 
-                #     # pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,
-                #     #                                                                             self.SVGP_unified_analytic_obj.use_nominal_model.item())
-                #     #evaluate GP contribution
-                #     if self.SVGP_unified_analytic_obj.use_nominal_model.item():    
-                #         pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)                                                                     
-                #     else:
-                #         pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = 0,0,0,0,0,0 # null dynamics
-                    
+                elif self.dynamic_model == "dynamic_bicycle_GP": # by default assume that there is a nominal model
+                    pos_x_dot, pos_y_dot, yaw_dot, vx_dot, vy_dot, w_dot = self.dynamic_bicycle_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw)                                                                     
+
                 else:
                     print('')
                     print('Dynamic_constraint: Invalid dynamic model setting')
@@ -1829,23 +1826,23 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
             dt_GP = dt_solver / self.discrete_dynamics_intermediate_shooting_vehicle_GP
             for _ in range(self.discrete_dynamics_intermediate_shooting_vehicle_GP):
                 # if self.SVGP_unified_analytic_obj.use_nominal_model.item():
-                #     x_star = casadi.horzcat(th_4_model,st_4_model,vx,vy,w)
-                #     vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_unified_analytic_obj.predictive_mean_only(x_star)
-                #     # pos_x_dot_GP, pos_y_dot_GP, yaw_dot_GP, vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,True) # not using dynamic model again so set it to false
-                #     # pos_x = pos_x + pos_x_dot_GP * dt_GP
-                #     # pos_y = pos_y + pos_y_dot_GP * dt_GP
-                #     # yaw = yaw + yaw_dot_GP * dt_GP
-                #     vx = vx + vx_dot_GP * dt_GP
-                #     vy = vy + vy_dot_GP * dt_GP
-                #     w = w + w_dot_GP * dt_GP
-                # else:
-                pos_x_dot_GP, pos_y_dot_GP, yaw_dot_GP, vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,self.SVGP_unified_analytic_obj.use_nominal_model.item()) # not using dynamic model again so set it to false
-                pos_x = pos_x + pos_x_dot_GP * dt_GP
-                pos_y = pos_y + pos_y_dot_GP * dt_GP
-                yaw = yaw + yaw_dot_GP * dt_GP
+                x_star = casadi.horzcat(th_4_model,st_4_model,vx,vy,w)
+                vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_unified_analytic_obj.predictive_mean_only(x_star)
+                # pos_x_dot_GP, pos_y_dot_GP, yaw_dot_GP, vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,True) # not using dynamic model again so set it to false
+                # pos_x = pos_x + pos_x_dot_GP * dt_GP
+                # pos_y = pos_y + pos_y_dot_GP * dt_GP
+                # yaw = yaw + yaw_dot_GP * dt_GP
                 vx = vx + vx_dot_GP * dt_GP
                 vy = vy + vy_dot_GP * dt_GP
                 w = w + w_dot_GP * dt_GP
+                # else:
+                # pos_x_dot_GP, pos_y_dot_GP, yaw_dot_GP, vx_dot_GP, vy_dot_GP, w_dot_GP = self.SVGP_continuous_dynamics(th_4_model,st_4_model,vx,vy,w,yaw,True) # not using dynamic model again so set it to false
+                # pos_x = pos_x + pos_x_dot_GP * dt_GP
+                # pos_y = pos_y + pos_y_dot_GP * dt_GP
+                # yaw = yaw + yaw_dot_GP * dt_GP
+                # vx = vx + vx_dot_GP * dt_GP
+                # vy = vy + vy_dot_GP * dt_GP
+                # w = w + w_dot_GP * dt_GP
 
 
 
@@ -1904,11 +1901,12 @@ class generate_single_layer_CAMPCC(generate_low_level_solver_ocp): # in the end 
         x_star = casadi.horzcat(th_input,st_input,vx,vy,w)
         cov_mS_x, cov_mS_y, cov_mS_w = self.SVGP_unified_analytic_obj.predictive_cov_only(x_star)
         # multiply by 2 so you are in the 2 sigma interval
-        sigma_interval = 0.75
+        sigma_interval = 1
         h1 = (sigma_interval*self.SVGP_unified_analytic_obj.max_stdev_x)**2 - cov_mS_x + slack
         h2 = (sigma_interval*self.SVGP_unified_analytic_obj.max_stdev_y)**2 - cov_mS_y + slack
         h3 = (sigma_interval*self.SVGP_unified_analytic_obj.max_stdev_w)**2 - cov_mS_w + slack
-
+        #vy_lim = 0.3
+        #h4 = vy_lim**2-vy**2+slack
         return  [1,1,1]
     
 

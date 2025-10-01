@@ -8,7 +8,7 @@ build_acados=False
 build_FORCES=True
 
 # select the solver to build MPCC or CAMPCC
-dynamic_models = ['dynamic_bicycle_GP'] # 'kinematic_bicycle', 'dynamic_bicycle', 'dynamic_bicycle_GP'
+dynamic_models = ['kinematic_bicycle', 'dynamic_bicycle', 'dynamic_bicycle_GP'] # 'kinematic_bicycle', 'dynamic_bicycle', 'dynamic_bicycle_GP'
 actuator_dynamics = [False] # True, False
 
 # select where to load the actuator dynamics from
@@ -17,10 +17,10 @@ current_script_dir = os.path.dirname(current_script_path)
 
 
 # # # Using GP and actuator dynamics from DART package
-import importlib.resources
-# import the GP parameters
-with importlib.resources.path('DART_dynamic_models', 'SVGP_saved_parameters_slippery_floor') as data_path:
-    GP_params_folder = str(data_path)
+# import importlib.resources
+# # import the GP parameters
+# with importlib.resources.path('DART_dynamic_models', 'SVGP_saved_parameters_slippery_floor') as data_path:
+#     GP_params_folder = str(data_path)
 
 # # # import the actuator dynamics parameters
 # # with importlib.resources.path('DART_dynamic_models', 'actuator_dynamics_saved_parameters') as data_path:
@@ -28,6 +28,10 @@ with importlib.resources.path('DART_dynamic_models', 'SVGP_saved_parameters_slip
 #GP_params_folder = os.path.join(current_script_dir, 'SVGP_saved_parameters') 
 
 #GP_params_folder = os.path.join(current_script_dir, 'SVGP_saved_parameters_slippery_floor')
+GP_params_folder = os.path.join(current_script_dir, 'SVGP_saved_parameters_slippery_floor_no_tape')
+
+#GP_params_folder = os.path.join(current_script_dir, 'SVGP_saved_parameters_slippery_floor_no_nominal_model')
+    
 actuator_dynamics_folder = os.path.join(current_script_dir, 'actuator_dynamics_saved_parameters')
 
 

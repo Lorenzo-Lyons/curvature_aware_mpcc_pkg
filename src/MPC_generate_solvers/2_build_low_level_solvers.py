@@ -5,7 +5,7 @@ from functions_for_solver_generation import generate_low_level_solver_ocp, gener
 
 
 # decide which solvers to build
-build_acados=True
+build_acados=False
 build_FORCES=True
 # select the solver to build MPCC or CAMPCC
 dynamic_models = ['kinematic_bicycle','dynamic_bicycle'] # 'kinematic_bicycle', 'dynamic_bicycle' 'kinematic_bicycle',

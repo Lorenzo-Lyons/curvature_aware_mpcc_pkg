@@ -32,9 +32,10 @@ max_laps = 3
 # select algorithm to tune
 MPC_algorithm = 'CAMPCC' # 'MPCC_PP'
 dynamic_model = 'dynamic_bicycle_GP' # 'dynamic_bicycle', 'dynamic_bicycle_GP'
+slippery_floor = True # True, False
 single_layer_tag = True
 ROS_study = True
-set_up_GUI_optuna_obj = set_up_GUI_optuna(GUI_mpc_node,single_layer_tag,MPC_algorithm,ROS_study,dynamic_model)
+set_up_GUI_optuna_obj = set_up_GUI_optuna(GUI_mpc_node,single_layer_tag,MPC_algorithm,ROS_study,dynamic_model,slippery_floor)
 
 
 # set dart simulator parameters
@@ -42,7 +43,9 @@ set_up_GUI_optuna_obj = set_up_GUI_optuna(GUI_mpc_node,single_layer_tag,MPC_algo
 GUI_client_simulator.update_configuration({"disturbance": False})
 if dynamic_model == 'dynamic_bicycle':
     GUI_client_simulator.update_configuration({"dynamic_model_choice": 2})
-elif dynamic_model == 'dynamic_bicycle_GP':
+elif slippery_floor:
+    GUI_client_simulator.update_configuration({"dynamic_model_choice": 4})
+elif dynamic_model == 'dynamic_bicycle_GP' and slippery_floor == False:
     GUI_client_simulator.update_configuration({"dynamic_model_choice": 3})
 
 
@@ -93,7 +96,7 @@ config_mpc = GUI_mpc_node.get_configuration()
 
 
 
-
+stall_time = 45 # max trail time after wi
 
 # -------------------------------- simualtion loop --------------------------------
 def objective(trial):
@@ -112,7 +115,8 @@ def objective(trial):
     start_time_trial = time.time()
     lane_bound_penalty = 0
     
-    while lap_count <= max_laps and (time.time() - start_time_trial) < 45: # protect against stalling
+    # and (time.time() - start_time_trial) < stall_time
+    while lap_count <= max_laps and interrupt==False: # protect against stalling
         # wait 2 s before activating the controller
         if time.time() - start_time_trial > 2:
             pub_safety_value.publish(1.0)
@@ -131,30 +135,50 @@ def objective(trial):
         elif s_1_now.data < s_1_prev.data and started_timer==True:
             lap_count += 1
             print("Lap completed: ", lap_count-1)
+
         # update the previous value
         s_1_prev = s_1_now
-        # print started_timer
+        #print started_timer
         #print("started_timer: ", started_timer)
         if started_timer:
             elapsed_time = time.time() - start_time
             distance_from_centerline_now = rospy.wait_for_message("/distance_from_centerline_1", Float32)
+            
+            # abort trial if going too slow
+            if elapsed_time > stall_time/3*(lap_count):
+                print('Trial aborted due to too long time')
+                interrupt = True
+            if lap_count == max_laps and elapsed_time < 6 * max_laps:
+                interrupt = True
+                print('Trial aborted due to too short time')
+            if distance_from_centerline_now.data - set_up_GUI_optuna_obj.lane_width/2 > set_up_GUI_optuna_obj.lane_width/2:
+                interrupt = True
+                print('Trial aborted due to lane violation')
+
+            # evaluate lane violation penalty
             if distance_from_centerline_now.data > set_up_GUI_optuna_obj.lane_width/2:
-                
                 lane_bound_penalty += set_up_GUI_optuna_obj.lane_violation_cost * (distance_from_centerline_now.data - set_up_GUI_optuna_obj.lane_width/2)
+
+
 
     # set safety to 0 immediately after the trial is completed
     pub_safety_value.publish(0.0)
 
-    if elapsed_time < 6 * max_laps or distance_from_centerline_now.data - set_up_GUI_optuna_obj.lane_width/2 > set_up_GUI_optuna_obj.lane_width/2: # something went wrong, like exited lane or some strange behavior
-        print('Trial aborted due to too short lap time or too large lane violation')
-        elapsed_time = 35
+    # if elapsed_time < 6 * max_laps or distance_from_centerline_now.data - set_up_GUI_optuna_obj.lane_width/2 > set_up_GUI_optuna_obj.lane_width/2: # something went wrong, like exited lane or some strange behavior
+    #     print('Trial aborted due to too short lap time or too large lane violation')
+    #     elapsed_time = stall_time
 
+    if interrupt == False:
+        interrupt_cost = 0
+    else:
+        interrupt_cost = 200
     
     print('Elapsed time: ', elapsed_time)
     print('Lane bound penalty: ', lane_bound_penalty)
+    print('Interrupt cost: ', interrupt_cost)
 
 
-    return elapsed_time + lane_bound_penalty
+    return elapsed_time + lane_bound_penalty + interrupt_cost
 
 
 

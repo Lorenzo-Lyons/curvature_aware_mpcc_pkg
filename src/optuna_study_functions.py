@@ -1,9 +1,10 @@
 class set_up_GUI_optuna(): # inherits from DART system identification
 
-    def __init__(self,GUI_mpc_node,single_layer_tag,MPC_algorithm,ROS_study,dynamic_model):
+    def __init__(self,GUI_mpc_node,single_layer_tag,MPC_algorithm,ROS_study,dynamic_model,slippery_floor):
 
         # select algorithm to tune
         #MPC_algorithm = 'CAMPCC' #
+        self.slippery_floor = slippery_floor
 
         if MPC_algorithm == 'MPCC':
             algorithm_number = 0
@@ -41,5 +42,9 @@ class set_up_GUI_optuna(): # inherits from DART system identification
             ROS_stufy_name = []
 
         self.study_name = "optuna_studies/optuna_results_" + single_layer_name + ROS_stufy_name + MPC_algorithm + dynamic_model
+        if slippery_floor:
+            self.study_name += "_slippery_floor"
+        
         self.storage_name = "sqlite:///" + self.study_name + ".db"  # SQLite database file
+
 

@@ -22,7 +22,7 @@ import rospkg
 # THIS NEEDS TO BE FIXED (i.e. only use forces and acados stuff if necessary)
 #import forcespro.nlp
 from acados_template import AcadosOcpSolver
-
+from scipy.linalg import solve_triangular
 from tf.transformations import euler_from_quaternion
 from MPC_generate_solvers.functions_for_solver_generation import    generate_high_level_path_planner_ocp,\
                                                                     generate_low_level_solver_ocp,\
@@ -279,6 +279,20 @@ class MPCC_controller_class(path_handeling_utilities_class):
         # delay compensation if in the lab
         self.delay_compensation = True
         self.delay = 0.03 * 0.5 # communication delay in seconds (in the lab) 0.04  (IT WILL be overwritten if the delay estimation node is running)
+        self.actuator_dynamics_compensation = False
+        if self.actuator_dynamics_compensation:
+            # get current folder
+            # current_script_path = os.path.realpath(__file__)
+            # act_dyn_path = os.path.join(current_script_path, 'MPC_generate_solvers','actuator_dynamics_saved_parameters.csv')
+            # self.load_actuator_dynamics(act_dyn_path)
+            # # set up B matrices to store past actions
+            # self.B_th = np.zeros((self.n_past_th, self.n_past_th))
+            # self.B_st = np.zeros((self.n_past_st, self.n_past_st))
+            self.delay_act_steps = 2
+            self.th_queue = np.zeros(self.delay_act_steps)
+            self.st_queue = np.zeros(self.delay_act_steps)
+        
+        
         # set p contingency if solver does not converge
         self.last_converged_high = True
         self.last_converged_low = True
@@ -794,6 +808,76 @@ class MPCC_controller_class(path_handeling_utilities_class):
         print('________________________________________________________________________________________')
 
 
+    def load_actuator_dynamics(self,path_2_folder):
+        print('loading actuator dynamics from folder: ', path_2_folder)
+        # load the actuator dynamics parameters
+        dt = np.load(path_2_folder + '/dt.npy').item()
+        n_past_actions = np.load(path_2_folder + '/n_past_actions.npy').item()
+        weights_th = np.load(path_2_folder + '/weights_throttle.npy')
+        weights_st = np.load(path_2_folder + '/weights_steering.npy')
+
+
+        self.dt_FIR = dt
+        self.n_past_actions_FRI = n_past_actions
+        self.weights_th_FIR = weights_th
+        self.weights_st_FIR = weights_st
+
+        # find the first value from the end of the weights that is larger than 10-6
+        n_past_actions_th = np.where(np.abs(weights_th) > 10**-6)[0][-1] + 2
+        n_past_actions_st = np.where(np.abs(weights_st) > 10**-6)[0][-1] + 2
+
+        
+        time_vec_th = np.arange(0,dt*n_past_actions_th,dt)
+        time_vec_st = np.arange(0,dt*n_past_actions_st,dt)
+        dt_solver = self.time_horizon / self.N
+        n_past_actions_th_solver = int(np.ceil(dt*n_past_actions_th/dt_solver)) 
+        n_past_actions_st_solver = int(np.ceil(dt*n_past_actions_st/dt_solver)) 
+
+        time_vec_th_solver = np.arange(0,dt_solver*n_past_actions_th_solver+dt_solver*0.5,dt_solver)
+        time_vec_st_solver = np.arange(0,dt_solver*n_past_actions_st_solver+dt_solver*0.5,dt_solver)
+
+        # now interpolate the weights to the solver time horizon
+        weights_th_solver = np.interp(time_vec_th_solver,time_vec_th,np.squeeze(weights_th[:n_past_actions_th]),right=0)
+        weights_st_solver = np.interp(time_vec_st_solver,time_vec_st,np.squeeze(weights_st[:n_past_actions_st]),right=0)
+
+        # set small values to 0 to simplyfy things
+        threshold = 10**-6
+        weights_th_solver[np.abs(weights_th_solver) < threshold] = 0
+        weights_st_solver[np.abs(weights_st_solver) < threshold] = 0
+
+        # assign to self
+        self.weights_th_FIR_solver = weights_th_solver[:-1] / np.sum(weights_th_solver[:-1]) # skip last value that will be 0 (this was needed to interpolate correctly)
+        self.weights_st_FIR_solver = weights_st_solver[:-1] / np.sum(weights_st_solver[:-1])
+
+        # # #  VERY TEMPORARY for debugging
+        # print('TEMPORARY: setting weights to 0 except for the first element')
+        # # replace with zeros except a one for the first element
+        # self.weights_th_FIR_solver = np.zeros_like(self.weights_th_FIR_solver)
+        # #self.weights_st_FIR_solver = np.zeros_like(self.weights_st_FIR_solver)
+        # self.weights_th_FIR_solver[1] = 1
+        # self.weights_st_FIR_solver[1] = 1
+
+        # to check at solver build time that the weights are correct
+        print('loaded actuator dynamics parameters')
+        print('throttle FIR weights: ', self.weights_th_FIR_solver)
+        print('steering FIR weights: ', self.weights_st_FIR_solver)
+
+        self.n_past_th = len(self.weights_th_FIR_solver)
+        self.n_past_st = len(self.weights_st_FIR_solver) 
+
+        # prodece A_w matrix for actuator signal tracking
+        self.Aw_th = np.zeros((self.n_past_th, self.n_past_th))
+        self.Aw_st = np.zeros((self.n_past_st, self.n_past_st))
+
+        for ii in range(self.n_past_th):
+            w_assignment = np.fliplr(self.weights_th_FIR_solver[:ii+1])
+            self.Aw_th[ii,:ii] = w_assignment
+        for ii in range(self.n_past_st):
+            w_assignment = np.fliplr(self.weights_st_FIR_solver[:ii+1])
+            self.Aw_st[ii,:ii] = w_assignment
+
+
+
     def initialize_constant_parameters(self):
 
         # high level parameters
@@ -974,7 +1058,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         xinit[0] = pos_x_init_rot
         xinit[1] = pos_y_init_rot
         xinit[2] = yaw_init_rot
-        xinit[3] = np.max([vx,0]) 
+        xinit[3] = np.max([vx,0.3]) 
         xinit[4] = vy
         xinit[5] = omega 
         xinit[6] = Ds_back # s is the current position along the path
@@ -1119,15 +1203,57 @@ class MPCC_controller_class(path_handeling_utilities_class):
         #         f"vy: {output_array_low_level[i, 7]:.2f}, "
         #         f"omega: {output_array_low_level[i, 8]:.2f}")
 
-        throttle_val = Float32(output_array_low_level[0, 0])
-        steering_val = Float32(output_array_low_level[0, 1])
+        if self.actuator_dynamics_compensation == False:
+        # just publush the values
+            throttle_val = Float32(output_array_low_level[0, 0])
+            steering_val = Float32(output_array_low_level[0, 1])
+
+        # account for actuator dynamics if enabled
+        else:
+            # update actutation queue
+            # self.th_queue = np.array([output_array_low_level[self.delay_act_steps, 0],*self.th_queue[:-1]])
+            # self.st_queue = np.array([output_array_low_level[self.delay_act_steps, 1],*self.st_queue[:-1]])
+
+            # publish the last value
+
+            throttle_val = Float32(output_array_low_level[self.delay_act_steps, 0])
+            steering_val = Float32(output_array_low_level[self.delay_act_steps, 1])
+
+            #print('throttle queue:',self.th_queue)
+
+            # #solve the actuator action tracking problem
+            # b_th = self.B_th @ self.weights_th_FIR_solver
+            # b_st = self.B_st @ self.weights_st_FIR_solver
+
+            # th_target = output_array_low_level[:self.n_past_th, 0]
+            # st_target = output_array_low_level[:self.n_past_st, 1]
+
+            # th_solution = solve_triangular(self.Aw_th, th_target - b_th, lower=True)
+            # st_solution = solve_triangular(self.Aw_st, st_target - b_st, lower=True)
+
+
+            # # update past actions in the B matrices
+            # # add current value on the diagonal
+            # self.B_th = np.fill_diagonal(self.B_th, output_array_low_level[0, 0])
+            # self.B_st = np.fill_diagonal(self.B_st, output_array_low_level[0, 1])
+
+            # # push previous values to the right
+            # for kk in range(self.n_past_th):
+            #     self.B_th[kk,1:] = self.B_th[kk,:-1]
+            # for kk in range(self.n_past_st):
+            #     self.B_st[kk,1:] = self.B_st[kk,:-1] 
+
+
+        self.throttle_publisher.publish(throttle_val)
+        self.steering_publisher.publish(steering_val)
+
 
         # for data storage purpouses
         self.throttle = throttle_val.data
         self.steering = steering_val.data
 
-        self.throttle_publisher.publish(throttle_val)
-        self.steering_publisher.publish(steering_val)
+
+
 
         # update past values
         if self.safety_value == 0:
@@ -1147,6 +1273,12 @@ class MPCC_controller_class(path_handeling_utilities_class):
         #add the inputs
         msg_mpc_th.data = throttle_val.data
         msg_mpc_st.data = steering_val.data
+
+
+
+            
+
+
         # publish the messages
         self.mpc_throttle_publisher.publish(msg_mpc_th)
         self.mpc_steering_publisher.publish(msg_mpc_st)
@@ -1482,6 +1614,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.vy = -vx_abs * np.sin(yaw) + vy_abs * np.cos(yaw)
 
 
+
         # unwrap past angles to avoid jumps when flipping from - pi to + pi
         delta_yaw = self.past_yaw_vicon[-1] - self.past_yaw_vicon[0]
         if delta_yaw > np.pi:
@@ -1516,7 +1649,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         
     def comm_delay_subscriber_callback(self,msg):
         # update the delay value
-        self.delay = msg.data
+        self.delay = msg.data + 0.1
 
 
 
@@ -1534,7 +1667,7 @@ if __name__ == '__main__':
         global_comptime_publisher = rospy.Publisher('GLOBAL_comptime', Float32, queue_size=1)
 
         # define controller rate
-        dt_controller_rate = 0.05 * 0.5
+        dt_controller_rate = 0.05
 
         #set up vehicle controllers
         #car 1
