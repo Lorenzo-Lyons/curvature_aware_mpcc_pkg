@@ -7,6 +7,10 @@ Curvature-Aware Model Predictive Contouring Control based on the following paper
 
 
 ## Installation
+> [!NOTE]
+> If using the drone_racing branch, switch to that branch and follow the installation instructions there.
+
+
 *Clone this repo*
 
 This repo is a ROS package, to use it as an MPC controller first clone this repo in a [catkin workspace](http://wiki.ros.org/catkin/Tutorials/create_a_workspace).
