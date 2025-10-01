@@ -1,3 +1,6 @@
+## Curvature-Aware MPCC for drone racing (rCA-MPCC)
+![Simulator](readme_images/drone_readme_image.png)
+
 ## Installation
 1. Create a catkin workspace. This is just a folder named as you like, and add a subfolder called src inside it.
 2. Open the src folder in a terminal and clone only this branch.
