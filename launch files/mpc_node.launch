@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 
 <launch>
-<node pkg="racing_campcc_pkg" type="mpc_node.py" name="mpc_node" output="screen"
+<node pkg="curvature_aware_mpcc_pkg" type="mpc_node.py" name="mpc_node" output="screen"
    />
-<node pkg="racing_campcc_pkg" type="safety_toggle.py" name="safety_toggle_node"
+<node pkg="curvature_aware_mpcc_pkg" type="safety_toggle.py" name="safety_toggle_node"
    />
 </launch>

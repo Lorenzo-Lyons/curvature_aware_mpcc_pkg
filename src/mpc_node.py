@@ -397,8 +397,9 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
 
         ## SELECT THE TRACK ##
+        track_choice = 'analytic_circle'
         #track_choice = 'spline_circle'
-        track_choice = 'vicon_racetrack'
+        #track_choice = 'vicon_racetrack'
 
 
         # TEMPORARY
@@ -409,7 +410,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         # produce track related fixed quantities
         #self.generate_track(track_choice)
-        load_optimally_smoothed_path = True
+        load_optimally_smoothed_path = False
 
         self.s_vals_global_path, self.x_vals_global_path, self.y_vals_global_path, self.z_vals_global_path, \
         self.roll_global_path, self.pitch_global_path, self.yaw_global_path, \

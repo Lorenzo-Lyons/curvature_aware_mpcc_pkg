@@ -11,12 +11,13 @@ sys.path.append(os.path.join(pkg_path, 'src'))
 from reference_path_handeling_functions import generate_path_data  # noqa
 
 # select track 
-track_choice = 'vicon_racetrack'
+#track_choice = 'vicon_racetrack'
 #track_choice = 'spline_circle'
+track_choice = 'analytic_circle'
 
 
 # load optimally generated path data
-load_optimally_smoothed_path = True
+load_optimally_smoothed_path = False
 
 s_vals_global_path, x_vals_global_path, y_vals_global_path, z_vals_global_path,\
 roll_global_path, pitch_global_path, yaw_global_path, \
@@ -29,7 +30,7 @@ gates, gates_s_global_path, time_optimal_trajectory_4_warmstart = generate_path_
 
 
 # Weights for the control action
-R = 1e-6 * np.diag([10, 10, 10, 1])  # ⬅️ Tune these weights as needed
+R = 1e-4 * np.diag([10, 10, 10, 1])  # ⬅️ Tune these weights as needed
 # these are relative to the lap time. So they are adding a w*u * dt at each stage, they are not really the same as the weight sin the MPC,
 # beacuse they are weighed against other things
 

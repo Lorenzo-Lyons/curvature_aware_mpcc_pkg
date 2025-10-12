@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
 <launch>
-  <node pkg="racing_campcc_pkg" type="mpc_node.py" name="mpc_node" output="screen" />
+  <node pkg="curvature_aware_mpcc_pkg" type="mpc_node.py" name="mpc_node" output="screen" />
   <node pkg="rqt_reconfigure" type="rqt_reconfigure" name="rqt_reconfigure_forwards_int" output="screen" />
 </launch>

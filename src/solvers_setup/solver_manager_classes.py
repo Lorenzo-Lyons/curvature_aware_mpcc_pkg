@@ -8,9 +8,9 @@ except:
 
 class common_solver_parameters():
     def __init__(self):
-        self.n_points_kernelized = 15 # number of points in the kernelized path (41 for reference)
-        self.time_horizon = 0.7
-        self.N = 7
+        self.n_points_kernelized = 20 # number of points in the kernelized path (41 for reference)
+        self.time_horizon = 1.0
+        self.N = 10
          # stages
 
         self.kernel_choice = 'RBF'  # 'RBF', 'Matern2'

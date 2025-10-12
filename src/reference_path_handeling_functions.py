@@ -17,6 +17,70 @@ def produce_track(choice,n_checkpoints):
     gates = []
 
     # tridimentional spline tracks, each tangent vector is defined at the extremity of the spline and represent the gate through which the drone must pass
+    if choice == 'analytic_circle':
+        import numpy as np
+
+        # --- circle params ---
+        R = 3.0                 # radius
+        z0 = 1.0                # constant z
+        cx, cy = 0.0, 0.0       # center of circle
+        start_angle = 0.0       # radians; 0 -> start at (R, 0)
+
+        # total length and wrap s into [0, 2πR)
+        L = 2.0 * np.pi * R
+
+        s = np.linspace(0.0, L, n_checkpoints, endpoint=False)
+
+        # angle along the circle
+        theta = start_angle + s / R
+        c, si = np.cos(theta), np.sin(theta)
+
+        # positions
+        Checkpoints_x = cx + R * c
+        Checkpoints_y = cy + R * si
+        Checkpoints_z = np.full_like(s, z0, dtype=float)
+
+        # first derivatives w.r.t. arc length s
+        # x = R cosθ, y = R sinθ, θ = s/R  => dx/ds = -sinθ, dy/ds = cosθ
+        Checkpoints_dx = -si
+        Checkpoints_dy =  c
+        Checkpoints_dz = np.zeros_like(s)
+
+        # second derivatives w.r.t. s
+        # d²x/ds² = -(1/R) cosθ, d²y/ds² = -(1/R) sinθ
+        invR = 1.0 / R
+        Checkpoints_ddx = -invR * c
+        Checkpoints_ddy = -invR * si
+        Checkpoints_ddz = np.zeros_like(s)
+
+        # (Optional) if you still want s as an output (wrapped length)
+        Checkpoints_s = s
+        
+        # ----------------------------------------------------------------------
+        # --- GATES: 4 gates placed at 0°, 90°, 180°, 270° along the circle ---
+        # ----------------------------------------------------------------------
+        n_gates = 4
+        gates = np.zeros((n_gates, 6))
+
+        # angles for each gate
+        gate_angles = start_angle + np.linspace(0, 1.5*np.pi, n_gates)  # 0, 90, 180, 270 deg
+
+        for i, ang in enumerate(gate_angles):
+            # position
+            xg = cx + R * np.cos(ang)
+            yg = cy + R * np.sin(ang)
+            zg = z0
+
+            # tangent vector (unit direction along the circle)
+            dxg = -np.sin(ang)
+            dyg =  np.cos(ang)
+            dzg =  0.0
+
+            # store position + tangent
+            gates[i, :3] = [xg, yg, zg]
+            gates[i, 3:6] = [dxg, dyg, dzg]
+        
+    
     if choice == 'spline_circle':
         R = 3                                     # radius of the circle
         tg_val = 5                                # module of the tangent vector at the extremity of the spline

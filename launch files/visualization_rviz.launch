@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <launch>
 
-<node pkg="rviz" type="rviz" name="rviz_node" args="-d $(find racing_campcc_pkg)/rviz_configs/drone_visualization_config.rviz" 
+<node pkg="rviz" type="rviz" name="rviz_node" args="-d $(find curvature_aware_mpcc_pkg)/rviz_configs/drone_visualization_config.rviz" 
    />
-<node pkg="racing_campcc_pkg" type="safety_toggle.py" name="safety_toggle_node"
+<node pkg="curvature_aware_mpcc_pkg" type="safety_toggle.py" name="safety_toggle_node"
    />
 <node pkg="rqt_reconfigure" type="rqt_reconfigure" name="rqt_reconfigure_forwards_int"
    />

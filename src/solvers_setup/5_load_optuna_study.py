@@ -11,7 +11,7 @@ os.chdir(dname)
 
 
 
-optuna_studies_folder = 'optuna_studies_th_07'
+optuna_studies_folder = 'optuna_studies_th_1'
 
 
 
@@ -43,12 +43,12 @@ if assign_to_GUI:
 
 
 
-MPC_algorithm = 'MPCCPP' # 'MPCC' - 'CAMPCC' - 'MPCCPP'
+MPC_algorithm = 'CAMPCC' # 'MPCC' - 'CAMPCC' - 'MPCCPP'
 # load the study from the database
 
 
 # save study
-study_name = optuna_studies_folder+"/optuna_study_results_ROS_" + MPC_algorithm
+study_name = optuna_studies_folder + "/optuna_study_results_ROS_" + MPC_algorithm
 storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
 
 

@@ -10,8 +10,9 @@ pkg_path = roslib.packages.get_pkg_dir('curvature_aware_mpcc_pkg')
 sys.path.append(os.path.join(pkg_path, 'src'))
 from reference_path_handeling_functions import generate_path_data  # noqa
 
-track_choice = 'vicon_racetrack'
+#track_choice = 'vicon_racetrack'
 #track_choice = 'spline_circle'
+track_choice = 'analytic_circle'
 
 
 
