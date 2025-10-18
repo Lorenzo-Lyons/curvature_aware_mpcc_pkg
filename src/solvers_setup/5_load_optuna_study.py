@@ -11,7 +11,7 @@ os.chdir(dname)
 
 
 
-optuna_studies_folder = 'optuna_studies_th_1'
+optuna_studies_folder = 'optuna_tudies_th_1_circle'
 
 
 

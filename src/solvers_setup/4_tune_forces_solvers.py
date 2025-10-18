@@ -4,6 +4,16 @@ import optuna
 import matplotlib.pyplot as plt
 import time
 from std_msgs.msg import Float32
+import copy
+import numpy as np
+import os
+from solver_manager_classes import MPC_solver_handler
+
+
+
+# NOTE 
+# from here you need to run the rviz simulator and  ONLY RUN THE MPC NODE, without the safety toggle, otherwise you will be sending safety on also.
+
 
 # change folder to where this script is located
 import os
@@ -12,11 +22,24 @@ dname = os.path.dirname(abspath)
 os.chdir(dname)
 
 
-optuna_studies_folder = 'optuna_studies_th_07'
+
+# Because we tune the CAMPCC after the MPCCPP, we will now train one after the other
+
+
+
+
 
 # select algorithm to tune
-MPC_algorithm = 'MPCCPP' # 'MPCC' - 'CAMPCC' - 'MPCCPP'
+MPC_algorithms = ['MPCCPP','CAMPCC'] # 'MPCC' - 'CAMPCC' - 'MPCCPP'
+time_horizon_vec = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+software = 'forcespro'  # 'acados' or 'forcespro'
 
+optuna_studies_folder = 'optuna_tudies'
+
+
+# specify track you are training on (just for initial guess of parameters)
+track = "analytic_circle"
+# track = "vicon_racetrack"
 
 rospy.init_node("optuna_node")  # Initialize the node
 pub_safety_value = rospy.Publisher('safety_value', Float32, queue_size=1)
@@ -28,7 +51,7 @@ GUI_mpc_node = Client("/mpc_node", timeout=5)
 
 max_laps = 1
 
-n_trials = 10
+n_trials = 100
 
 
 
@@ -49,57 +72,58 @@ GUI_mpc_node.update_configuration({"q_yaw": 0.1})
 GUI_mpc_node.update_configuration({"q_lag": 100.0})
 #GUI_mpc_node.update_configuration({"qt_s": 100.0})
 
-# define initial paraemter guess for optuna
-
-initial_guess = {
-"qt_s": 0.1,
-"qt_pos": 10.0,
-}
-
-if MPC_algorithm == "CAMPCC":
+# define initial parameter guess for optuna
+def produce_initial_guess(controller_type):
     initial_guess = {
-    "qt_v": 0.1,
+    "qt_s": 0.1,
+    "qt_pos": 10.0,
     }
-    # load previously found best parameters for MPCCPP as they will not be changed
-    load_study_name = optuna_studies_folder+"/optuna_study_results_ROS_" + "MPCCPP"
-    storage_name = "sqlite:///" + load_study_name + ".db"  # SQLite database file
-    print('loading GUI parameters from: ', load_study_name)
-    study = optuna.load_study(study_name=load_study_name, storage=storage_name)
-    for key, value in study.best_params.items():
-        GUI_mpc_node.update_configuration({key: value})
+
+    if controller_type == "CAMPCC":
+        initial_guess = {
+        "qt_v": 0.1,
+        }
+
+
+    return initial_guess
+
     
 
 
 
-
-
-
-def reset_initial_position(GUI_client_simulator):
+def reset_initial_position(GUI_client_simulator, track):
+    if track == "analytic_circle":
+        GUI_client_simulator.update_configuration({"reset_state_x": 0.0})
+        GUI_client_simulator.update_configuration({"reset_state_y": -3})
+        GUI_client_simulator.update_configuration({"reset_state_z": 1})
+    elif track == "vicon_racetrack":
+        GUI_client_simulator.update_configuration({"reset_state_x": -2.88})
+        GUI_client_simulator.update_configuration({"reset_state_y": -1.2})
+        GUI_client_simulator.update_configuration({"reset_state_z": 2.4})
+    
     GUI_client_simulator.update_configuration({"reset_state": True})
-    GUI_client_simulator.update_configuration({"reset_state_x": -2.88})
-    GUI_client_simulator.update_configuration({"reset_state_y": -1.2})
-    GUI_client_simulator.update_configuration({"reset_state_z": 2.4})
     GUI_client_simulator.update_configuration({"reset_state_roll": 0.0})
     GUI_client_simulator.update_configuration({"reset_state_pitch": 0.0})
     GUI_client_simulator.update_configuration({"reset_state_yaw": 0.0})
 
-def set_mpc_node_GUI(trial,GUI_mpc_node):
+def set_mpc_node_GUI(trial,GUI_mpc_node, MPC_solver_handler_obj):
     # generate random parameters
     # q_roll_pitch = trial.suggest_float("q_roll_pitch", 0.01, 1, log=False) 
     # q_yaw = trial.suggest_float("q_yaw", 0.01, 1, log=False)
     #qt_s = trial.suggest_float("qt_s", 0.01, 100, log=True) 
 
     # algorithm specific parameters
+    controller_type = MPC_solver_handler_obj.controller_type
 
     
-    if MPC_algorithm == 'MPCC' or MPC_algorithm == 'MPCCPP':
+    if controller_type == 'MPCC' or controller_type == 'MPCCPP':
         qt_s = trial.suggest_float("qt_s", 0.01, 10, log=True) 
         qt_pos = trial.suggest_float("qt_pos", 0.01, 100, log=True) #0.1
         qt_v = 0
         GUI_mpc_node.update_configuration({"qt_pos": qt_pos})
         GUI_mpc_node.update_configuration({"qt_s": qt_s})
 
-    elif MPC_algorithm == 'CAMPCC':
+    elif controller_type == 'CAMPCC':
         qt_v = trial.suggest_float("qt_v", 0.01, 2.5, log=False) 
         GUI_mpc_node.update_configuration({"qt_v": qt_v})
 
@@ -107,15 +131,16 @@ def set_mpc_node_GUI(trial,GUI_mpc_node):
     #read config
     #config_mpc = GUI_mpc_node.get_configuration()
     #cange parameters of interest
-    if MPC_algorithm == 'MPCC':
+    if controller_type == 'MPCC':
         algorithm_number = 0
-    elif MPC_algorithm == 'CAMPCC':
+    elif controller_type == 'CAMPCC':
         algorithm_number = 1
-    elif MPC_algorithm == 'MPCCPP':
+    elif controller_type == 'MPCCPP':
         algorithm_number = 2
 
     # set GUI params
     GUI_mpc_node.update_configuration({"controller_type": algorithm_number})
+    GUI_mpc_node.update_configuration({"time_horizon": MPC_solver_handler_obj.time_horizon})
 
 
     
@@ -132,27 +157,12 @@ config_mpc = GUI_mpc_node.get_configuration()
 
 
 
-
-# # # load optimal trajectory paraemters
-# # import roslib
-# # import sys
-# # pkg_path = roslib.packages.get_pkg_dir('curvature_aware_mpcc_pkg')
-# # sys.path.append(os.path.join(pkg_path, 'src'))     # or whatever sub‑folder holds the module
-# # from reference_path_handeling_functions import generate_path_data
-
-# # track_choice = 'vicon_racetrack'
-# # load_optimally_smoothed_path = True
-
-# # s_vals_global_path, x_vals_global_path, y_vals_global_path, z_vals_global_path, \
-# # s_4_local_path, x_4_local_path, y_4_local_path, z_4_local_path, \
-# # dx_ds, dy_ds, dz_ds, d2x_ds2, d2y_ds2, d2z_ds2, \
-# # gates_coordinates, gates_s , time_optimal_trajectory_4_warmstart = generate_path_data(track_choice, load_optimally_smoothed_path)
-
-
 # # optimal_lap_timee = time_optimal_trajectory_4_warmstart[-1,15]  # last element is the total time of the optimal trajectory
-optimal_lap_time = 8.3
 
-
+if track == "analytic_circle":
+    optimal_lap_time = 4
+elif track == "vicon_racetrack":
+    optimal_lap_time = 8.3
 
 
 
@@ -162,12 +172,12 @@ optimal_lap_time = 8.3
 
 
 # -------------------------------- simualtion loop --------------------------------
-def objective(trial):
+def objective(trial, MPC_solver_handler_obj, track):
     pub_safety_value.publish(0.0)
 
     # reset initial position to before the start of the track
-    reset_initial_position(GUI_client_simulator)
-    set_mpc_node_GUI(trial,GUI_mpc_node)
+    reset_initial_position(GUI_client_simulator, track)
+    set_mpc_node_GUI(trial, GUI_mpc_node, MPC_solver_handler_obj)
 
     
     s_1_prev = rospy.wait_for_message("/s", Float32)
@@ -188,13 +198,18 @@ def objective(trial):
         # read most recent message from s_1 topic
         s_1_now = rospy.wait_for_message("/s", Float32)
         # chek if the lap was completed
+
+        # TEMPORARY PRINTING of current and previous s values with 3 decimals
+        #print(f"--- s_now: {s_1_now.data:.3f} | s_prev: {s_1_prev.data:.3f} ---")
+
+
         if s_1_now.data < s_1_prev.data and started_timer==False:
             started_timer = True
             start_time = time.time()
             lap_count += 1
             print("Lap completed: ", lap_count-1)
         
-        elif s_1_now.data - s_1_prev.data < -20 and started_timer==True:
+        elif s_1_now.data - s_1_prev.data < -10 and started_timer==True:
             lap_count += 1
             print("Lap completed: ", lap_count-1)
         # update the previous value
@@ -225,9 +240,7 @@ def objective(trial):
 
 
 
-# save study
-study_name = optuna_studies_folder +"/optuna_study_results_ROS_" + MPC_algorithm
-storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
+
 
 
 
@@ -241,37 +254,78 @@ from optuna.integration import BoTorchSampler
 sampler = BoTorchSampler(n_startup_trials=n_startup_trials)  # GP starts after 5 random trials
 
 
-study = optuna.create_study(study_name=study_name,
-                            direction="minimize",
-                            storage=storage_name,
-                            load_if_exists=True,
-                            sampler=sampler)
-
-# evaluate initial guess as first trial
-#study.enqueue_trial(initial_guess)
-# Add first 5 warm-start trials close to the initial guess
-import copy
-import numpy as np
-for i in range(n_startup_trials):
-    print('--------- trial ', i, '---------')
-    perturbed = copy.deepcopy(initial_guess)
-    for key in initial_guess:
-        # Add small Gaussian noise (std = 5% of range or fixed small amount)
-        noise = np.random.normal(loc=0.0, scale=0.0 * (10 if "qt" not in key else 1))
-        # show key and noise
-        print(f"Perturbing {key} by noise: {noise:.2f}")
-        perturbed[key] = max(0.0, initial_guess[key] + noise)  # enforce non-negative
-    study.enqueue_trial(perturbed)
 
 
 
+for time_horizon in time_horizon_vec:
+    for controller_type in MPC_algorithms:
+        
+        # define MPC algorithm and time horizon in the GUI
+        MPC_solver_handler_obj = MPC_solver_handler(controller_type,time_horizon,software)
+
+        # define study name and storage
+        study_name = os.path.join(optuna_studies_folder, "optuna_study_" + MPC_solver_handler_obj.solver_name_forcespro)
+        storage_name = os.path.join(optuna_studies_folder, "sqlite:///" + study_name + ".db")
+        #study_name = optuna_studies_folder +"/optuna_study_results_ROS_" + controller_type
+        #storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
+        
+
+        study = optuna.create_study(study_name=study_name,
+                                    direction="minimize",
+                                    storage=storage_name,
+                                    load_if_exists=True,
+                                    sampler=sampler)
 
 
-study.optimize(objective, n_trials=n_trials)
+        # define initial guess
+        initial_guess = produce_initial_guess(controller_type)
 
-print("Best hyperparameters:", study.best_params)
 
-study.trials_dataframe().to_csv(study_name)
+        # If algorithm is CAMPCC we use the same parameters as found for MPCCPP and then only tune the additiona one
+        if controller_type == 'CAMPCC':
+            # load previously found best parameters for MPCCPP as they will not be changed
+            load_study_name = optuna_studies_folder+"/optuna_study_results_ROS_" + "MPCCPP"
+            storage_name = "sqlite:///" + load_study_name + ".db"  # SQLite database file
+            print('loading GUI parameters from: ', load_study_name)
+            study = optuna.load_study(study_name=load_study_name, storage=storage_name)
+            for key, value in study.best_params.items():
+                GUI_mpc_node.update_configuration({key: value})
+
+
+
+        # pre-load initial guess as first trial
+        for i in range(n_startup_trials):
+            print('--------- trial ', i, '---------')
+            perturbed = copy.deepcopy(initial_guess)
+            for key in initial_guess:
+                # Add small Gaussian noise (std = 5% of range or fixed small amount)
+                noise = np.random.normal(loc=0.0, scale=0.0 * (10 if "qt" not in key else 1))
+                # show key and noise
+                print(f"Perturbing {key} by noise: {noise:.2f}")
+                perturbed[key] = max(0.0, initial_guess[key] + noise)  # enforce non-negative
+            study.enqueue_trial(perturbed)
+
+
+        # perform the optimization
+        study.optimize(lambda trial: objective(trial, MPC_solver_handler_obj, track),n_trials=n_trials)
+        #study.optimize(objective, n_trials=n_trials)
+        print("Best hyperparameters:", study.best_params)
+        study.trials_dataframe().to_csv(study_name)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # try reloading study

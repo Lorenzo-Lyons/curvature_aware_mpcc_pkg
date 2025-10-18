@@ -54,6 +54,7 @@ class MPC_GUI_manager:
         self.drone_mpc_obj = drone_mpc_obj
         self.MPC_algorithm_options = drone_mpc_obj.MPC_algorithm_options #['MPCC', 'CAMPCC','MPCCPP','CAMPCC_EA']
         self.software_choice_options = drone_mpc_obj.software_choice_options #['acados', 'forcespro']
+        self.time_horizon_options = drone_mpc_obj.time_horizon_options #[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 
         # as a last thing create the server because it will be locked executing here
         srv = Server(Drone_MPCC_dynamic_reconfigureConfig, self.reconfig_callback)
@@ -77,6 +78,7 @@ class MPC_GUI_manager:
             'qt_s':       'qt_s',
             'lane_radius':       'lane_radius',
             'local_path_length': 'local_path_length',
+            'time_horizon': 'time_horizon',
             'controller_type': 'controller_type',
             'software_choice': 'software_choice'
         }
@@ -92,6 +94,9 @@ class MPC_GUI_manager:
                 new_value = self.MPC_algorithm_options[new_value]
             if cfg_key == 'software_choice':
                 new_value = self.software_choice_options[new_value]
+            if cfg_key == 'time_horizon':
+                # round to the closest value in the options
+                new_value = min(self.time_horizon_options, key=lambda x: abs(x - new_value))
             
             if current_value != new_value:
                 print(f"  {attr} changed: {current_value} → {new_value}")
@@ -427,10 +432,13 @@ class MPCC_controller_class(path_handeling_utilities_class):
         # Define controller and software options
         self.MPC_algorithm_options = ['MPCC', 'CAMPCC', 'MPCCPP','CAMPCC_EA','CAMPCC_EA_2']
         self.software_choice_options = ['acados', 'forcespro']
+        self.time_horizon_options = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 
         # Default selections
         self.controller_type = "CAMPCC"
         self.software_choice = "forcespro"
+        self.time_horizon = 1.0
+
 
         # Create a dictionary to hold all solver handlers
         self.solver_objects_dict = {}
@@ -438,15 +446,17 @@ class MPCC_controller_class(path_handeling_utilities_class):
         # Populate the dictionary using combinations
         for controller in self.MPC_algorithm_options:
             self.solver_objects_dict[controller] = {}
-            for software in self.software_choice_options:
-                handler, solver, dt = self.produce_solver_handlers(controller, software)
-                self.solver_objects_dict[controller][software] = {
-                    "handler": handler,
-                    "solver": solver,
-                    "dt": dt
-                }
+            for time_horizon in self.time_horizon_options:
+                self.solver_objects_dict[controller][str(time_horizon)] = {}
+                for software in self.software_choice_options:
+                    handler, solver, dt = self.produce_solver_handlers(controller, software, time_horizon)
+                    self.solver_objects_dict[controller][str(time_horizon)][software] = {
+                        "handler": handler,
+                        "solver": solver,
+                        "dt": dt
+                    }
 
-        selected_solver_object = self.solver_objects_dict[self.controller_type][self.software_choice]
+        selected_solver_object = self.solver_objects_dict[self.controller_type][str(self.time_horizon)][self.software_choice]
         self.solver_handler_obj = selected_solver_object["handler"]
         self.solver = selected_solver_object["solver"]
         self.solver_dt = selected_solver_object["dt"]
@@ -486,6 +496,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.qt_s = 1
         self.lane_radius = 0.5
         self.local_path_length = 5  # local_path_length: length of the local path used for the MPC controller
+        # time horizon already defined above 
 
         # set up the initial s prediction
         # # chose solver handler objects
@@ -606,10 +617,10 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.safety_value = msg.data
 
 
-    def produce_solver_handlers(self,controller_type, software_choice):
+    def produce_solver_handlers(self,controller_type, software_choice, time_horizon):
 
         # add additional solver options here when they are developed (for now only CAMPCC is available)
-        solver_handler_obj = MPC_solver_handler(controller_type,software_choice)
+        solver_handler_obj = MPC_solver_handler(controller_type, time_horizon,software_choice)
 
         if software_choice == 'acados':
             solver_path = os.path.join( self.solvers_folder_path,
@@ -948,10 +959,10 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
 
     # The MPCC control loop (this is one iteration only so this need to be called multiple times in a while loop)
-    def run_one_mpc_control_loop(self, controller_type, software_choice):
+    def run_one_mpc_control_loop(self, controller_type, time_horizon ,software_choice):
 
         # select solver related objects
-        selected_solver_object = self.solver_objects_dict[controller_type][software_choice]
+        selected_solver_object = self.solver_objects_dict[controller_type][str(time_horizon)][software_choice]
         solver_handler_obj = selected_solver_object["handler"]
         solver = selected_solver_object["solver"]
         solver_dt = selected_solver_object["dt"]
@@ -1470,6 +1481,7 @@ if __name__ == '__main__':
 
                 # --- run 1 control loop ---
                 drone_controller_obj.run_one_mpc_control_loop(  drone_controller_obj.controller_type,
+                                                                drone_controller_obj.time_horizon,
                                                                 drone_controller_obj.software_choice)
 
 

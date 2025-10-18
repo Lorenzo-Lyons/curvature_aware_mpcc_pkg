@@ -9,9 +9,7 @@ except:
 class common_solver_parameters():
     def __init__(self):
         self.n_points_kernelized = 20 # number of points in the kernelized path (41 for reference)
-        self.time_horizon = 1.0
-        self.N = 10
-         # stages
+        # stages
 
         self.kernel_choice = 'RBF'  # 'RBF', 'Matern2'
         self.path_lengthscale = 1.3/self.n_points_kernelized #1.3/self.n_points_kernelized
@@ -97,12 +95,18 @@ class common_solver_parameters():
 
 class MPC_solver_handler(common_solver_parameters): # inherits from DART system identification
 
-    def __init__(self,controller_type, software_choice='acados'):
+    def __init__(self,controller_type, time_horizon, software_choice='acados'):
         super().__init__()
+        self.time_horizon = time_horizon
+        self.N = int(np.ceil(time_horizon / 0.1))  # number of control intervals, assuming 0.1s per interval
         self.controller_type = controller_type
         self.software_choice = software_choice  # 'acados' or 'forcespro'
-        self.solver_name = controller_type + '_solver'
-        self.solver_name_forcespro = controller_type + '_forcespro_solver'
+        # self.solver_name = controller_type + '_' + str(time_horizon) + '_solver'
+        # self.solver_name_forcespro = controller_type + '_' + str(time_horizon) + '_forcespro_solver'
+        time_str = f"th{time_horizon:.1f}".replace('.', '')  # 0.9 → "09", 1.5 → "15"
+        self.solver_name = f"{controller_type}_{time_str}_solver"
+        self.solver_name_forcespro = f"{controller_type}_{time_str}_forcespro_solver"
+
         self.n_base_params = 17
 
         self.controller_type = controller_type 
