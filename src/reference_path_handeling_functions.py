@@ -55,7 +55,7 @@ def produce_track(choice,n_checkpoints):
 
         # (Optional) if you still want s as an output (wrapped length)
         Checkpoints_s = s
-        
+
         # ----------------------------------------------------------------------
         # --- GATES: 4 gates placed at 0°, 90°, 180°, 270° along the circle ---
         # ----------------------------------------------------------------------

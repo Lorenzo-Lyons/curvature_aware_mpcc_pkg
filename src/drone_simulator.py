@@ -10,7 +10,7 @@ import numpy as np
 from scipy import integrate
 from tf.transformations import quaternion_from_euler
 from dynamic_reconfigure.server import Server
-from dynamic_reconfigure_pkg.cfg import Drone_Forwards_int_opti_message_dynamic_reconfigureConfig
+from curvature_aware_mpcc_pkg.cfg import Drone_Forwards_int_opti_message_dynamic_reconfigureConfig
 from visualization_msgs.msg import MarkerArray, Marker
 
 

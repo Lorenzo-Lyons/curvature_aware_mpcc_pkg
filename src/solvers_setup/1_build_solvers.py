@@ -17,7 +17,7 @@ software_choice = ["forcespro"]  # "acados", "forcespro"
 for controller in controller_type:
     for software in software_choice:
         print('_________________________________________________')
-        
+
 
         MPC_solver_handler_obj = MPC_solver_handler(controller, software)
         if software == "acados":

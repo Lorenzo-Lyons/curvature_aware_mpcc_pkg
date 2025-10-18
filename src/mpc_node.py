@@ -43,7 +43,7 @@ from acados_template import AcadosOcpSolver
 
 # for dynamic paramters reconfigure (setting param values from rqt_reconfigure GUI)
 from dynamic_reconfigure.server import Server
-from dynamic_reconfigure_pkg.cfg import Drone_MPCC_dynamic_reconfigureConfig
+from curvature_aware_mpcc_pkg.cfg import Drone_MPCC_dynamic_reconfigureConfig
 import copy
 from scipy.spatial.transform import Rotation as R
 from solvers_setup.drone_dynamic_model import evaluate_w
@@ -55,7 +55,7 @@ class MPC_GUI_manager:
         self.MPC_algorithm_options = drone_mpc_obj.MPC_algorithm_options #['MPCC', 'CAMPCC','MPCCPP','CAMPCC_EA']
         self.software_choice_options = drone_mpc_obj.software_choice_options #['acados', 'forcespro']
 
-        # as a last thing creat the server because it will be locked executing here
+        # as a last thing create the server because it will be locked executing here
         srv = Server(Drone_MPCC_dynamic_reconfigureConfig, self.reconfig_callback)
 
         
