@@ -1,6 +1,9 @@
 import rospy
 from dynamic_reconfigure.client import Client
 import optuna
+import logging
+# Suppress info messages from Optuna
+optuna.logging.set_verbosity(optuna.logging.ERROR)
 import matplotlib.pyplot as plt
 import time
 from std_msgs.msg import Float32
@@ -8,6 +11,9 @@ import copy
 import numpy as np
 import os
 from solver_manager_classes import MPC_solver_handler
+from itertools import product
+from tqdm import tqdm
+
 
 
 
@@ -76,8 +82,8 @@ GUI_mpc_node.update_configuration({"q_lag": 100.0})
 def produce_initial_guess(controller_type, previous_study_name, previous_storage_name):
     # check if previous study exists
     if previous_study_name != [] and previous_storage_name != []:
-        print('Previous study found for longer time horizon, using as initial guess.')
-        print('loading initial guess from: ', previous_study_name)
+        #print('Previous study found for longer time horizon, using as initial guess.')
+        #print('loading initial guess from: ', previous_study_name)
         study = optuna.load_study(study_name=previous_study_name, storage=previous_storage_name)
         initial_guess = {}
         for key, value in study.best_params.items():
@@ -219,11 +225,11 @@ def objective(trial, MPC_solver_handler_obj, track):
             started_timer = True
             start_time = time.time()
             lap_count += 1
-            print("Lap completed: ", lap_count-1)
+            #print("Lap completed: ", lap_count-1)
         
         elif s_1_now.data - s_1_prev.data < -10 and started_timer==True:
             lap_count += 1
-            print("Lap completed: ", lap_count-1)
+            #print("Lap completed: ", lap_count-1)
         # update the previous value
         s_1_prev = s_1_now
         # print started_timer
@@ -242,8 +248,8 @@ def objective(trial, MPC_solver_handler_obj, track):
     #     elapsed_time = 35
 
     
-    print('Elapsed time: ', elapsed_time)
-    print('Lane bound penalty: ', lane_bound_penalty)
+    #print('Elapsed time: ', elapsed_time)
+    #print('Lane bound penalty: ', lane_bound_penalty)
 
 
     return elapsed_time + lane_bound_penalty
@@ -275,13 +281,37 @@ previous_study_name_CAMPCC = []
 previous_storage_name_CAMPCC = []
 
 
-for time_horizon in time_horizon_vec:
+
+# all this parafenallia is just to have a progress bar that works well with rospy
+
+# # helper so you can keep using `log()` instead of `print()`
+# log = tqdm.write
+
+# pairs = list(product(time_horizon_vec, MPC_algorithms))
+
+# for time_horizon, controller_type in tqdm(
+#     pairs,
+#     total=len(pairs),
+#     desc="Full tuning progress",
+#     dynamic_ncols=True,
+#     leave=True,          # keep the bar after completion
+#     position=0
+# ):
+#     # logs that don't disturb the bar:
+#     log("\n" + "─" * 50)
+#     MPC_solver_handler_obj = MPC_solver_handler(controller_type, time_horizon, software)
+#     log(f"Tuning algorithm: {MPC_solver_handler_obj.solver_name_forcespro}")
+
+print('')
+print('')
+print('')
+for time_horizon in tqdm(time_horizon_vec, desc="Time horizon progress"):
     for controller_type in MPC_algorithms:
         
         # define MPC algorithm and time horizon in the GUI
         MPC_solver_handler_obj = MPC_solver_handler(controller_type,time_horizon,software)
-        print('_________________________________________________')
-        print('Tuning algorithm: ', MPC_solver_handler_obj.solver_name_forcespro)
+        #print('_________________________________________________')
+        #print('Tuning algorithm: ', MPC_solver_handler_obj.solver_name_forcespro)
 
 
         # define study name and storage
@@ -318,8 +348,8 @@ for time_horizon in time_horizon_vec:
             study_name_MPCCPP = os.path.join(optuna_studies_folder, "optuna_study_" + MPC_solver_handler_obj_MPCCPP.solver_name_forcespro  + '_' + track)
             storage_name_MPCCPP = os.path.join("sqlite:///", study_name_MPCCPP + ".db")
 
-            print('Controller is CAMPCC, using the values for qt_pos and qt_s from previously optimized MPCCPP.')
-            print('loading GUI parameters from: ', study_name_MPCCPP)
+            #print('Controller is CAMPCC, using the values for qt_pos and qt_s from previously optimized MPCCPP.')
+            #print('loading GUI parameters from: ', study_name_MPCCPP)
             study_MPCC = optuna.load_study(study_name=study_name_MPCCPP, storage=storage_name_MPCCPP)
             for key, value in study_MPCC.best_params.items():
                 GUI_mpc_node.update_configuration({key: value})
@@ -328,13 +358,13 @@ for time_horizon in time_horizon_vec:
 
         # pre-load initial guess as first trial
         for i in range(n_startup_trials):
-            print('--------- trial ', i, '---------')
+            #print('--------- trial ', i, '---------')
             perturbed = copy.deepcopy(initial_guess)
             for key in initial_guess:
                 # Add small Gaussian noise (std = 5% of range or fixed small amount)
                 noise = np.random.normal(loc=0.0, scale=0.0 * (10 if "qt" not in key else 1))
                 # show key and noise
-                print(f"Perturbing {key} by noise: {noise:.2f}")
+                #print(f"Perturbing {key} by noise: {noise:.2f}")
                 perturbed[key] = max(0.0, initial_guess[key] + noise)  # enforce non-negative
             study.enqueue_trial(perturbed)
 
@@ -342,7 +372,7 @@ for time_horizon in time_horizon_vec:
         # perform the optimization
         study.optimize(lambda trial: objective(trial, MPC_solver_handler_obj, track),n_trials=n_trials)
         #study.optimize(objective, n_trials=n_trials)
-        print("Best hyperparameters:", study.best_params)
+        #print("Best hyperparameters:", study.best_params)
         study.trials_dataframe().to_csv(study_name)
 
 
@@ -354,8 +384,8 @@ for time_horizon in time_horizon_vec:
             previous_study_name_CAMPCC = study_name
             previous_storage_name_CAMPCC = storage_name
 
-        print('‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾')
-        print('')
+        #print('‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾')
+        #print('')
 
 
 
