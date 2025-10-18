@@ -31,10 +31,10 @@ os.chdir(dname)
 
 # select algorithm to tune
 MPC_algorithms = ['MPCCPP','CAMPCC'] # 'MPCC' - 'CAMPCC' - 'MPCCPP'
-time_horizon_vec = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+time_horizon_vec = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1] # start from longer horizons to shorter ones
 software = 'forcespro'  # 'acados' or 'forcespro'
 
-optuna_studies_folder = 'optuna_tudies'
+optuna_studies_folder = 'optuna_studies'
 
 
 # specify track you are training on (just for initial guess of parameters)
@@ -51,7 +51,7 @@ GUI_mpc_node = Client("/mpc_node", timeout=5)
 
 max_laps = 1
 
-n_trials = 100
+n_trials = 1
 
 
 
@@ -73,16 +73,28 @@ GUI_mpc_node.update_configuration({"q_lag": 100.0})
 #GUI_mpc_node.update_configuration({"qt_s": 100.0})
 
 # define initial parameter guess for optuna
-def produce_initial_guess(controller_type):
-    initial_guess = {
-    "qt_s": 0.1,
-    "qt_pos": 10.0,
-    }
+def produce_initial_guess(controller_type, previous_study_name, previous_storage_name):
+    # check if previous study exists
+    if previous_study_name != [] and previous_storage_name != []:
+        print('Previous study found for longer time horizon, using as initial guess.')
+        print('loading initial guess from: ', previous_study_name)
+        study = optuna.load_study(study_name=previous_study_name, storage=previous_storage_name)
+        initial_guess = {}
+        for key, value in study.best_params.items():
+            initial_guess[key] = value
 
-    if controller_type == "CAMPCC":
+
+
+    else:
         initial_guess = {
-        "qt_v": 0.1,
+        "qt_s": 0.1,
+        "qt_pos": 10.0,
         }
+
+        if controller_type == "CAMPCC":
+            initial_guess = {
+            "qt_v": 0.1,
+            }
 
 
     return initial_guess
@@ -256,16 +268,25 @@ sampler = BoTorchSampler(n_startup_trials=n_startup_trials)  # GP starts after 5
 
 
 
+# tune all the algorithms and time horizons
+previous_study_name_MPCCPP = []
+previous_storage_name_MPCCPP = []
+previous_study_name_CAMPCC = []
+previous_storage_name_CAMPCC = []
+
 
 for time_horizon in time_horizon_vec:
     for controller_type in MPC_algorithms:
         
         # define MPC algorithm and time horizon in the GUI
         MPC_solver_handler_obj = MPC_solver_handler(controller_type,time_horizon,software)
+        print('_________________________________________________')
+        print('Tuning algorithm: ', MPC_solver_handler_obj.solver_name_forcespro)
+
 
         # define study name and storage
-        study_name = os.path.join(optuna_studies_folder, "optuna_study_" + MPC_solver_handler_obj.solver_name_forcespro)
-        storage_name = os.path.join(optuna_studies_folder, "sqlite:///" + study_name + ".db")
+        study_name = os.path.join(optuna_studies_folder, "optuna_study_" + MPC_solver_handler_obj.solver_name_forcespro + '_' + track)
+        storage_name = os.path.join("sqlite:///", study_name + ".db")
         #study_name = optuna_studies_folder +"/optuna_study_results_ROS_" + controller_type
         #storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
         
@@ -278,17 +299,29 @@ for time_horizon in time_horizon_vec:
 
 
         # define initial guess
-        initial_guess = produce_initial_guess(controller_type)
+        if controller_type == 'MPCCPP':
+            previous_study_name = previous_study_name_MPCCPP
+            previous_storage_name = previous_storage_name_MPCCPP
+        elif controller_type == 'CAMPCC':
+            previous_study_name = previous_study_name_CAMPCC
+            previous_storage_name = previous_storage_name_CAMPCC
+
+        initial_guess = produce_initial_guess(controller_type, previous_study_name, previous_storage_name)
 
 
-        # If algorithm is CAMPCC we use the same parameters as found for MPCCPP and then only tune the additiona one
+        # If algorithm is CAMPCC we use the same parameters as found for MPCCPP and then only tune the additional one
         if controller_type == 'CAMPCC':
             # load previously found best parameters for MPCCPP as they will not be changed
-            load_study_name = optuna_studies_folder+"/optuna_study_results_ROS_" + "MPCCPP"
-            storage_name = "sqlite:///" + load_study_name + ".db"  # SQLite database file
-            print('loading GUI parameters from: ', load_study_name)
-            study = optuna.load_study(study_name=load_study_name, storage=storage_name)
-            for key, value in study.best_params.items():
+            #load_study_name = optuna_studies_folder+"/optuna_study_results_ROS_" + "MPCCPP"
+            #storage_name = "sqlite:///" + load_study_name + ".db"  # SQLite database file
+            MPC_solver_handler_obj_MPCCPP = MPC_solver_handler("MPCCPP",time_horizon,'forcespro')
+            study_name_MPCCPP = os.path.join(optuna_studies_folder, "optuna_study_" + MPC_solver_handler_obj_MPCCPP.solver_name_forcespro  + '_' + track)
+            storage_name_MPCCPP = os.path.join("sqlite:///", study_name_MPCCPP + ".db")
+
+            print('Controller is CAMPCC, using the values for qt_pos and qt_s from previously optimized MPCCPP.')
+            print('loading GUI parameters from: ', study_name_MPCCPP)
+            study_MPCC = optuna.load_study(study_name=study_name_MPCCPP, storage=storage_name_MPCCPP)
+            for key, value in study_MPCC.best_params.items():
                 GUI_mpc_node.update_configuration({key: value})
 
 
@@ -313,6 +346,23 @@ for time_horizon in time_horizon_vec:
         study.trials_dataframe().to_csv(study_name)
 
 
+        # save study name for next iteration
+        if controller_type == 'MPCCPP':
+            previous_study_name_MPCCPP = study_name
+            previous_storage_name_MPCCPP = storage_name
+        elif controller_type == 'CAMPCC':
+            previous_study_name_CAMPCC = study_name
+            previous_storage_name_CAMPCC = storage_name
+
+        print('‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾')
+        print('')
+
+
+
+# print message that we are done
+print('------------------------------')
+print('All done with tuning!')
+print('------------------------------')
 
 
 
@@ -326,16 +376,14 @@ for time_horizon in time_horizon_vec:
 
 
 
+# # try reloading study
+# study = optuna.load_study(study_name=study_name, storage=storage_name)
 
 
-# try reloading study
-study = optuna.load_study(study_name=study_name, storage=storage_name)
+# optuna.visualization.plot_optimization_history(study).show()
+# optuna.visualization.plot_param_importances(study).show()
+# # to visualize using dashboard, use the following command in terminal:
+# # optuna-dashboard sqlite:///optuna_study_results_ROS_MPCC.db  (use actual name of the database file)
 
 
-optuna.visualization.plot_optimization_history(study).show()
-optuna.visualization.plot_param_importances(study).show()
-# to visualize using dashboard, use the following command in terminal:
-# optuna-dashboard sqlite:///optuna_study_results_ROS_MPCC.db  (use actual name of the database file)
-
-
-plt.show()
+# plt.show()
