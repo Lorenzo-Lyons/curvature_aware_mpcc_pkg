@@ -57,7 +57,7 @@ GUI_mpc_node = Client("/mpc_node", timeout=5)
 
 max_laps = 1
 
-n_trials = 1
+n_trials = 100
 
 
 
@@ -99,7 +99,7 @@ def produce_initial_guess(controller_type, previous_study_name, previous_storage
 
         if controller_type == "CAMPCC":
             initial_guess = {
-            "qt_v": 0.1,
+            "qt_v": 1,
             }
 
 
@@ -135,14 +135,14 @@ def set_mpc_node_GUI(trial,GUI_mpc_node, MPC_solver_handler_obj):
 
     
     if controller_type == 'MPCC' or controller_type == 'MPCCPP':
-        qt_s = trial.suggest_float("qt_s", 0.01, 10, log=True) 
+        qt_s = trial.suggest_float("qt_s", 0.01, 100, log=True) 
         qt_pos = trial.suggest_float("qt_pos", 0.01, 100, log=True) #0.1
         qt_v = 0
         GUI_mpc_node.update_configuration({"qt_pos": qt_pos})
         GUI_mpc_node.update_configuration({"qt_s": qt_s})
 
     elif controller_type == 'CAMPCC':
-        qt_v = trial.suggest_float("qt_v", 0.01, 2.5, log=False) 
+        qt_v = trial.suggest_float("qt_v", 0.01, 100, log=False) 
         GUI_mpc_node.update_configuration({"qt_v": qt_v})
 
 
@@ -264,12 +264,15 @@ def objective(trial, MPC_solver_handler_obj, track):
 
 # --- define the sampler ---
 
-n_startup_trials = 1
+n_startup_trials = 3
 
 #from optuna.samplers import TPESampler
 # sampler = TPESampler()
+import warnings
+from optuna.exceptions import ExperimentalWarning
+warnings.filterwarnings("ignore", category=ExperimentalWarning)
 from optuna.integration import BoTorchSampler
-sampler = BoTorchSampler(n_startup_trials=n_startup_trials)  # GP starts after 5 random trials
+
 
 
 
@@ -302,10 +305,16 @@ previous_storage_name_CAMPCC = []
 #     MPC_solver_handler_obj = MPC_solver_handler(controller_type, time_horizon, software)
 #     log(f"Tuning algorithm: {MPC_solver_handler_obj.solver_name_forcespro}")
 
+
 print('')
 print('')
 print('')
-for time_horizon in tqdm(time_horizon_vec, desc="Time horizon progress"):
+
+# persistent top bar over all (time_horizon, controller_type) pairs
+outer = tqdm(total=len(time_horizon_vec) * len(MPC_algorithms),
+             desc="Overall progress", position=0, leave=True, dynamic_ncols=True)
+
+for time_horizon in time_horizon_vec:
     for controller_type in MPC_algorithms:
         
         # define MPC algorithm and time horizon in the GUI
@@ -320,6 +329,8 @@ for time_horizon in tqdm(time_horizon_vec, desc="Time horizon progress"):
         #study_name = optuna_studies_folder +"/optuna_study_results_ROS_" + controller_type
         #storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
         
+        # create fresh sampler
+        sampler = BoTorchSampler(n_startup_trials=n_startup_trials)  # GP starts after 5 random trials
 
         study = optuna.create_study(study_name=study_name,
                                     direction="minimize",
@@ -358,19 +369,43 @@ for time_horizon in tqdm(time_horizon_vec, desc="Time horizon progress"):
 
         # pre-load initial guess as first trial
         for i in range(n_startup_trials):
+            #for i in tqdm(range(n_startup_trials), desc="Iterations", position=1, leave=False, dynamic_ncols=True):
             #print('--------- trial ', i, '---------')
             perturbed = copy.deepcopy(initial_guess)
             for key in initial_guess:
                 # Add small Gaussian noise (std = 5% of range or fixed small amount)
-                noise = np.random.normal(loc=0.0, scale=0.0 * (10 if "qt" not in key else 1))
+                noise = np.random.normal(loc=0.0, scale=0.01 * (10 if "qt" not in key else 1))
                 # show key and noise
                 #print(f"Perturbing {key} by noise: {noise:.2f}")
                 perturbed[key] = max(0.0, initial_guess[key] + noise)  # enforce non-negative
             study.enqueue_trial(perturbed)
 
 
+        # inner bar for this study's trials
+        inner = tqdm(total=n_trials,
+                     desc=f"Trials: {controller_type} th={time_horizon}",
+                     position=1, leave=False, dynamic_ncols=True)
+
+        # callback: tick inner bar on every finished trial
+        def _pb_callback(study, trial):
+            inner.update(1)
+            # optional: show latest value/state on the tail
+            # inner.set_postfix(value=f"{trial.value:.3g}" if trial.value is not None else "—",
+            #                   state=str(trial.state).split('.')[-1])
+
+
+
         # perform the optimization
-        study.optimize(lambda trial: objective(trial, MPC_solver_handler_obj, track),n_trials=n_trials)
+        #study.optimize(lambda trial: objective(trial, MPC_solver_handler_obj, track),n_trials=n_trials)
+        # run the study with the callback
+        study.optimize(lambda t: objective(t, MPC_solver_handler_obj, track),
+                       n_trials=n_trials,
+                       callbacks=[_pb_callback])
+
+        inner.close()
+        
+
+        
         #study.optimize(objective, n_trials=n_trials)
         #print("Best hyperparameters:", study.best_params)
         study.trials_dataframe().to_csv(study_name)
@@ -386,6 +421,10 @@ for time_horizon in tqdm(time_horizon_vec, desc="Time horizon progress"):
 
         #print('‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾')
         #print('')
+    
+    outer.update(1)
+
+outer.close()
 
 
 
