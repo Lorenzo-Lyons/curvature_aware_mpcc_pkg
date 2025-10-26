@@ -13,8 +13,10 @@ os.chdir(dname)
 
 plt.rcParams.update({'font.size': 20})
 
+
+
 # select algorithm to tune
-MPC_algorithms = ['MPCCPP','CAMPCC'] # 'MPCC' - 'CAMPCC' - 'MPCCPP'
+MPC_algorithms = ['MPCCPP','CAMPCC','CAMPCC_qtpos_from_MPCCPP','CAMPCC_qtpos_tuned'] # 'MPCC' - 'CAMPCC' - 'MPCCPP' - 'CAMPCC_qtpos_from_MPCCPP' - '"CAMPCC_qtpos_tuned"'
 time_horizon_vec = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
 software = 'forcespro'  # 'acados' or 'forcespro'
 
@@ -48,6 +50,14 @@ for time_horizon, color in zip(time_horizon_vec, colors):
 
         # define study name
         study_name = os.path.join(optuna_studies_folder, "optuna_study_" + MPC_solver_handler_obj.solver_name_forcespro + '_' + track)
+        # if controller_type == 'CAMPCC_qtpos_from_MPCCPP':
+        #     # replace "CAMPCC" with "CAMPCC_qtpos_from_MPCCPP" in the study name
+        #     study_name = study_name.replace("CAMPCC", "CAMPCC_qtpos_from_MPCCPP")
+        # elif controller_type == 'CAMPCC_qtpos_tuned':
+        #     # replace "CAMPCC" with "CAMPCC_qtpos_tuned" in the study name
+        #     study_name = study_name.replace("CAMPCC", "CAMPCC_qtpos_tuned")
+
+        
         storage_name = os.path.join("sqlite:///", study_name + ".db")
 
         study = optuna.load_study(study_name=study_name, storage=storage_name)
@@ -171,10 +181,12 @@ plt.ioff()
 
 
 lw = 2
-color_ca = 'dodgerblue'
 color_pp = 'orangered'
-colors = [color_pp, color_ca]
-labels = ['MPCC++', 'rCA-MPCC']
+color_ca = 'dodgerblue'
+color_ca_mpcc = 'deepskyblue'
+color_ca_tuned = 'cyan'
+colors = [color_pp, color_ca, color_ca_mpcc, color_ca_tuned]
+labels = ['MPCC++', 'rCA-MPCC', r'rCA-MPCC ($q^t_{pos}$ from MPCC++)', 'rCA-MPCC (tuned)']
 
 # plot best lap time vs time horizon
 fig3, ax_lap_time = plt.subplots(figsize=(10, 4))
@@ -188,7 +200,7 @@ time_horizon_vec_flipped = list(reversed(time_horizon_vec))
 
 
 # number of best runs to average
-n_best_to_average = 5  
+n_best_to_average = 1  
 
 for controller_type, color, label in zip(MPC_algorithms, colors, labels):
     best_lap_times = []

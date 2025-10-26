@@ -37,10 +37,21 @@ os.chdir(dname)
 
 # select algorithm to tune
 MPC_algorithms = ['CAMPCC'] # 'MPCC' - 'CAMPCC' - 'MPCCPP'
-time_horizon_vec = [0.9] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
+time_horizon_vec = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
 software = 'forcespro'  # 'acados' or 'forcespro'
 
 optuna_studies_folder = 'optuna_studies'
+
+# training CAMPCC with qt_pos from  MPCCPP?
+CAMPCC_qtpos_flag = 2  # 0 set to 0, 1 set to previous best qt_pos from MPCCPP, 2 leave free to tune
+
+
+if CAMPCC_qtpos_flag == 0:
+    CAMPCC_qt_pos_name_tag = "CAMPCC"
+elif CAMPCC_qtpos_flag == 1:
+    CAMPCC_qt_pos_name_tag = "CAMPCC_qtpos_from_MPCCPP"
+elif CAMPCC_qtpos_flag == 2:
+    CAMPCC_qt_pos_name_tag = "CAMPCC_qtpos_tuned"
 
 
 # specify track you are training on (just for initial guess of parameters)
@@ -120,7 +131,7 @@ def reset_initial_position(GUI_client_simulator, track):
     GUI_client_simulator.update_configuration({"reset_state_pitch": 0.0})
     GUI_client_simulator.update_configuration({"reset_state_yaw": 0.0})
 
-def set_mpc_node_GUI(trial,GUI_mpc_node, MPC_solver_handler_obj):
+def set_mpc_node_GUI(trial,GUI_mpc_node, MPC_solver_handler_obj,CAMPCC_qtpos_flag=0):
     # algorithm specific parameters
     controller_type = MPC_solver_handler_obj.controller_type
 
@@ -131,8 +142,26 @@ def set_mpc_node_GUI(trial,GUI_mpc_node, MPC_solver_handler_obj):
 
     elif controller_type == 'CAMPCC':
         qt_s = trial.suggest_float("qt_s", 1, 100, log=False)
-        qt_pos = 0
         qt_v = trial.suggest_float("qt_v", 0.1, 100, log=False) 
+        if CAMPCC_qtpos_flag == 0:
+            qt_pos = 0
+        elif CAMPCC_qtpos_flag == 1:
+            # read best qt_pos from previous MPCCPP study
+            # TEMPORARY UGLY COPY PASTE FROM ABOVE
+            campcc_study_name = os.path.join(optuna_studies_folder, "optuna_study_" + MPC_solver_handler_obj.solver_name_forcespro + '_' + track)
+            # replace "MPCCPP" with "CAMPCC"    
+            mpccpp_study_name = campcc_study_name.replace("CAMPCC", "MPCCPP")
+            
+            
+            #mpccpp_study_name = os.path.join(optuna_studies_folder, "optuna_study_MPCCPP_forcespro_" + track)
+            mpccpp_storage_name = os.path.join("sqlite:///", mpccpp_study_name + ".db")
+            mpccpp_study = optuna.load_study(study_name=mpccpp_study_name, storage=mpccpp_storage_name)
+            best_trial = mpccpp_study.best_trial
+            best_qt_pos = best_trial.params["qt_pos"]
+            qt_pos = best_qt_pos
+            print('Using qt_pos from MPCCPP: ', qt_pos)
+        elif CAMPCC_qtpos_flag == 2:
+            qt_pos = trial.suggest_float("qt_pos", 0, 100, log=False)
 
 
     GUI_mpc_node.update_configuration({"qt_s": qt_s})
@@ -186,9 +215,10 @@ elif track == "vicon_racetrack":
 def objective(trial, MPC_solver_handler_obj, track):
     pub_safety_value.publish(0.0)
 
+
     # reset initial position to before the start of the track
     reset_initial_position(GUI_client_simulator, track)
-    set_mpc_node_GUI(trial, GUI_mpc_node, MPC_solver_handler_obj)
+    set_mpc_node_GUI(trial, GUI_mpc_node, MPC_solver_handler_obj,CAMPCC_qtpos_flag)
 
     
     s_1_prev = rospy.wait_for_message("/s", Float32)
@@ -371,6 +401,10 @@ for time_horizon in time_horizon_vec:
 
         # define study name and storage
         study_name = os.path.join(optuna_studies_folder, "optuna_study_" + MPC_solver_handler_obj.solver_name_forcespro + '_' + track)
+        if controller_type == 'CAMPCC' and CAMPCC_qt_pos_name_tag != "":
+            # replace "CAMPCC" with the tag
+            study_name = study_name.replace("CAMPCC", CAMPCC_qt_pos_name_tag)
+        
         storage_name = os.path.join("sqlite:///", study_name + ".db")
         #study_name = optuna_studies_folder +"/optuna_study_results_ROS_" + controller_type
         #storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
