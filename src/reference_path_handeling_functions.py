@@ -419,7 +419,11 @@ def generate_path_data(track_choice, optimally_smoothed = False):
 
     if optimally_smoothed == False:
         # # --- generate raw ---
-        n_checkpoints = 100  # number of checkpoints to be used to define each spline of the track (just an initial guess, it will be overwritten by the track definition)
+        if track_choice == 'analytic_circle':
+            n_checkpoints = 1000
+        else:
+            n_checkpoints = 100  # number of checkpoints to be used to define each spline of the track (just an initial guess, it will be overwritten by the track definition)
+        
         Checkpoints_x_raw, Checkpoints_y_raw, Checkpoints_z_raw,\
         Checkpoints_dx_raw, Checkpoints_dy_raw, Checkpoints_dz_raw,\
         Checkpoints_ddx_raw, Checkpoints_ddy_raw, Checkpoints_ddz_raw,\

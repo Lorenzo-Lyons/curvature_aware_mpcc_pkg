@@ -36,8 +36,8 @@ os.chdir(dname)
 
 
 # select algorithm to tune
-MPC_algorithms = ['MPCCPP','CAMPCC'] # 'MPCC' - 'CAMPCC' - 'MPCCPP'
-time_horizon_vec = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1] # start from longer horizons to shorter ones
+MPC_algorithms = ['CAMPCC'] # 'MPCC' - 'CAMPCC' - 'MPCCPP'
+time_horizon_vec = [0.9] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
 software = 'forcespro'  # 'acados' or 'forcespro'
 
 optuna_studies_folder = 'optuna_studies'
@@ -57,11 +57,11 @@ GUI_mpc_node = Client("/mpc_node", timeout=5)
 
 max_laps = 1
 
-n_trials = 100
+n_trials = 100 # must be more than number startup trials for the sampler to work well
+n_startup_trials = 50
 
 
-
-lane_violation_cost = 10
+lane_violation_cost = 1
 lane_radius = 0.5
 
 # set up constant parameters
@@ -78,41 +78,37 @@ GUI_mpc_node.update_configuration({"q_yaw": 0.1})
 GUI_mpc_node.update_configuration({"q_lag": 100.0})
 #GUI_mpc_node.update_configuration({"qt_s": 100.0})
 
-# define initial parameter guess for optuna
-def produce_initial_guess(controller_type, previous_study_name, previous_storage_name):
-    # check if previous study exists
-    if previous_study_name != [] and previous_storage_name != []:
-        #print('Previous study found for longer time horizon, using as initial guess.')
-        #print('loading initial guess from: ', previous_study_name)
-        study = optuna.load_study(study_name=previous_study_name, storage=previous_storage_name)
-        initial_guess = {}
-        for key, value in study.best_params.items():
-            initial_guess[key] = value
+# # define initial parameter guess for optuna
+# def produce_initial_guess(controller_type, previous_study_name, previous_storage_name):
+#     # check if previous study exists
+#     # if previous_study_name != [] and previous_storage_name != []:
+#     #     #print('Previous study found for longer time horizon, using as initial guess.')
+#     #     #print('loading initial guess from: ', previous_study_name)
+#     #     study = optuna.load_study(study_name=previous_study_name, storage=previous_storage_name)
+#     #     initial_guess = {}
+#     #     for key, value in study.best_params.items():
+#     #         initial_guess[key] = value
+#     #else:
+#     initial_guess = {
+#     "qt_s": 10.0,
+#     "qt_pos": 10.0,
+#     }
+
+#     if controller_type == "CAMPCC":
+#         initial_guess = {
+#         "qt_s": 10.0,
+#         "qt_v": 0.1,
+#         }
 
 
-
-    else:
-        initial_guess = {
-        "qt_s": 0.1,
-        "qt_pos": 10.0,
-        }
-
-        if controller_type == "CAMPCC":
-            initial_guess = {
-            "qt_v": 1,
-            }
-
-
-    return initial_guess
+#     return initial_guess
 
     
 
-
-
 def reset_initial_position(GUI_client_simulator, track):
     if track == "analytic_circle":
-        GUI_client_simulator.update_configuration({"reset_state_x": 0.0})
-        GUI_client_simulator.update_configuration({"reset_state_y": -3})
+        GUI_client_simulator.update_configuration({"reset_state_x": 0.2})
+        GUI_client_simulator.update_configuration({"reset_state_y": -3.2})
         GUI_client_simulator.update_configuration({"reset_state_z": 1})
     elif track == "vicon_racetrack":
         GUI_client_simulator.update_configuration({"reset_state_x": -2.88})
@@ -125,26 +121,23 @@ def reset_initial_position(GUI_client_simulator, track):
     GUI_client_simulator.update_configuration({"reset_state_yaw": 0.0})
 
 def set_mpc_node_GUI(trial,GUI_mpc_node, MPC_solver_handler_obj):
-    # generate random parameters
-    # q_roll_pitch = trial.suggest_float("q_roll_pitch", 0.01, 1, log=False) 
-    # q_yaw = trial.suggest_float("q_yaw", 0.01, 1, log=False)
-    #qt_s = trial.suggest_float("qt_s", 0.01, 100, log=True) 
-
     # algorithm specific parameters
     controller_type = MPC_solver_handler_obj.controller_type
 
-    
     if controller_type == 'MPCC' or controller_type == 'MPCCPP':
-        qt_s = trial.suggest_float("qt_s", 0.01, 100, log=True) 
-        qt_pos = trial.suggest_float("qt_pos", 0.01, 100, log=True) #0.1
+        qt_s = trial.suggest_float("qt_s", 1, 100, log=False) 
+        qt_pos = trial.suggest_float("qt_pos", 1, 100, log=False) #0.1
         qt_v = 0
-        GUI_mpc_node.update_configuration({"qt_pos": qt_pos})
-        GUI_mpc_node.update_configuration({"qt_s": qt_s})
 
     elif controller_type == 'CAMPCC':
-        qt_v = trial.suggest_float("qt_v", 0.01, 100, log=False) 
-        GUI_mpc_node.update_configuration({"qt_v": qt_v})
+        qt_s = trial.suggest_float("qt_s", 1, 100, log=False)
+        qt_pos = 0
+        qt_v = trial.suggest_float("qt_v", 0.1, 100, log=False) 
 
+
+    GUI_mpc_node.update_configuration({"qt_s": qt_s})
+    GUI_mpc_node.update_configuration({"qt_pos": qt_pos})
+    GUI_mpc_node.update_configuration({"qt_v": qt_v})
 
     #read config
     #config_mpc = GUI_mpc_node.get_configuration()
@@ -204,14 +197,36 @@ def objective(trial, MPC_solver_handler_obj, track):
     elapsed_time = 0
     start_time_trial = time.time()
     lane_bound_penalty = 0
-    
-    while lap_count <= max_laps and (time.time()-start_time_trial) < (optimal_lap_time)*max_laps*3.5: # protect against stalling
+    time_limit = (optimal_lap_time)*max_laps*3.5
+    prev_time = 0 # to evaluate dt for lane bound penalty
+    max_lane_penalty = 1 #
+    #while lap_count <= max_laps and (time.time()-start_time_trial) < (optimal_lap_time)*max_laps*3.5: # protect against stalling
+
+
+
+    while True:
+        #now = time.time()
+        time_since_trial_start = (time.time()-start_time_trial)
+        # --- explicit stop conditions ---
+        if lap_count > max_laps:
+            exit_reason = "laps_completed"
+            break
+
+        if time_since_trial_start >= time_limit:
+            exit_reason = "time_limit"
+            break
+        
+        if lane_bound_penalty > max_lane_penalty:
+            exit_reason = "lane_violation"
+            break
+
+
+
         # wait 2 s before activating the controller
         if time.time() - start_time_trial > 1:
             pub_safety_value.publish(1.0)
         else:
             pub_safety_value.publish(0.0)
-
 
         # read most recent message from s_1 topic
         s_1_now = rospy.wait_for_message("/s", Float32)
@@ -237,11 +252,22 @@ def objective(trial, MPC_solver_handler_obj, track):
         if started_timer:
             elapsed_time = time.time() - start_time
             distance_from_centerline_now = rospy.wait_for_message("/distance_from_centerline", Float32)
+
+            dt = time.time() - prev_time
+            prev_time = time.time()
             if distance_from_centerline_now.data > lane_radius:
-                lane_bound_penalty += lane_violation_cost * (distance_from_centerline_now.data - lane_radius)
+                lane_bound_penalty += (distance_from_centerline_now.data - lane_radius) * dt
 
     # set safety to 0 immediately after the trial is completed
     pub_safety_value.publish(0.0)
+
+
+    if elapsed_time < optimal_lap_time*0.5 and started_timer == True:  # something went wrong, like exited lane or some strange behavior
+        exit_reason = "too_fast"
+
+
+    # print extit reason
+    #print('Exit reason: ', exit_reason)
 
     # if elapsed_time < 6 * max_laps or distance_from_centerline_now.data - lane_width/2 > lane_width/2: # something went wrong, like exited lane or some strange behavior
     #     print('Trial aborted due to too short lap time or too large lane violation')
@@ -250,9 +276,26 @@ def objective(trial, MPC_solver_handler_obj, track):
     
     #print('Elapsed time: ', elapsed_time)
     #print('Lane bound penalty: ', lane_bound_penalty)
+    objective_value = elapsed_time #+ lane_bound_penalty
 
 
-    return elapsed_time + lane_bound_penalty
+    # if exit_reason == "too":  # something went wrong, like exited lane or some strange behavior
+    #     print('Trial aborted, completed laps too quickly.')
+    #     objective_value = optimal_lap_time*max_laps*3.0 # assigning high penalty
+    # elif exit_reason == "time_limit":
+    #     print('Trial aborted, time limit reached (going too slow).')
+    #     objective_value = optimal_lap_time*max_laps*3.0
+    # elif lane_bound_penalty >
+
+    if exit_reason == "laps_completed":
+        #print('Trial completed successfully.')
+        pass
+    else:
+        print('Trial aborted due to: ' + exit_reason)
+        objective_value = optimal_lap_time*max_laps*3.0
+
+
+    return objective_value
 
 
 
@@ -264,7 +307,7 @@ def objective(trial, MPC_solver_handler_obj, track):
 
 # --- define the sampler ---
 
-n_startup_trials = 3
+#n_startup_trials = 3
 
 #from optuna.samplers import TPESampler
 # sampler = TPESampler()
@@ -272,6 +315,9 @@ import warnings
 from optuna.exceptions import ExperimentalWarning
 warnings.filterwarnings("ignore", category=ExperimentalWarning)
 from optuna.integration import BoTorchSampler
+
+
+
 
 
 
@@ -330,55 +376,102 @@ for time_horizon in time_horizon_vec:
         #storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
         
         # create fresh sampler
-        sampler = BoTorchSampler(n_startup_trials=n_startup_trials)  # GP starts after 5 random trials
+        #sampler = BoTorchSampler(n_startup_trials=n_startup_trials)  # GP starts after 5 random trials
 
-        study = optuna.create_study(study_name=study_name,
-                                    direction="minimize",
-                                    storage=storage_name,
-                                    load_if_exists=True,
-                                    sampler=sampler)
+        import itertools
+        import optuna
+
+        # Create a 4x4 grid of values  (for initialization on uniform grid)
+        grid_values = [20, 40, 60, 80]
+
+        # # Define the sampler (your config)
+        # sampler = optuna.samplers.TPESampler(
+        #     gamma=lambda n: min(50, int(0.3 * n)),
+        #     consider_prior=True,
+        #     prior_weight=50.0,
+        #     consider_magic_clip=True,
+        #     consider_endpoints=False,
+        #     n_startup_trials=n_startup_trials, 
+        #     n_ei_candidates=50,
+        #     multivariate=False,
+        #     group=False,
+        #     warn_independent_sampling=True,
+        #     seed=None,
+        # )
+
+        # # WIDE SEARCH PARAMETERS
+        # sampler = optuna.samplers.TPESampler(
+        #     # Let TPE choose its well-tested default gamma: ~min(25, n/4)
+        #     consider_prior=True,
+        #     prior_weight=1.0,              # lower the smoothing
+        #     consider_magic_clip=True,
+        #     consider_endpoints=True,       # allow boundary exploration
+        #     n_startup_trials=n_startup_trials, # rule of thumb: ~5–10 per dim (use your D)
+        #     n_ei_candidates=400,           # more candidates -> better EI search
+        #     multivariate=True,             # model interactions
+        #     warn_independent_sampling=True,
+        #     seed=0,                        # make behavior reproducible for debugging
+        # )
+
+        # 
+        sampler = optuna.samplers.TPESampler(
+            # Let TPE choose its well-tested default gamma: ~min(25, n/4)
+            consider_prior=True,
+            prior_weight=10.0,              # lower the smoothing
+            consider_magic_clip=True,
+            consider_endpoints=True,       # allow boundary exploration
+            n_startup_trials=n_startup_trials, # rule of thumb: ~5–10 per dim (use your D)
+            n_ei_candidates=50,           # more candidates -> better EI search
+            multivariate=True,             # model interactions
+            warn_independent_sampling=True,
+            seed=0,                        # make behavior reproducible for debugging
+        )
 
 
-        # define initial guess
-        if controller_type == 'MPCCPP':
-            previous_study_name = previous_study_name_MPCCPP
-            previous_storage_name = previous_storage_name_MPCCPP
-        elif controller_type == 'CAMPCC':
-            previous_study_name = previous_study_name_CAMPCC
-            previous_storage_name = previous_storage_name_CAMPCC
-
-        initial_guess = produce_initial_guess(controller_type, previous_study_name, previous_storage_name)
 
 
-        # If algorithm is CAMPCC we use the same parameters as found for MPCCPP and then only tune the additional one
-        if controller_type == 'CAMPCC':
-            # load previously found best parameters for MPCCPP as they will not be changed
-            #load_study_name = optuna_studies_folder+"/optuna_study_results_ROS_" + "MPCCPP"
-            #storage_name = "sqlite:///" + load_study_name + ".db"  # SQLite database file
-            MPC_solver_handler_obj_MPCCPP = MPC_solver_handler("MPCCPP",time_horizon,'forcespro')
-            study_name_MPCCPP = os.path.join(optuna_studies_folder, "optuna_study_" + MPC_solver_handler_obj_MPCCPP.solver_name_forcespro  + '_' + track)
-            storage_name_MPCCPP = os.path.join("sqlite:///", study_name_MPCCPP + ".db")
+        study = optuna.create_study(
+            study_name=study_name,
+            direction="minimize",
+            storage=storage_name,
+            load_if_exists=True,
+            sampler=sampler
+        )
 
-            #print('Controller is CAMPCC, using the values for qt_pos and qt_s from previously optimized MPCCPP.')
-            #print('loading GUI parameters from: ', study_name_MPCCPP)
-            study_MPCC = optuna.load_study(study_name=study_name_MPCCPP, storage=storage_name_MPCCPP)
-            for key, value in study_MPCC.best_params.items():
-                GUI_mpc_node.update_configuration({key: value})
+        # # --- enqueue the 4x4 grid of predefined parameter combinations ---
+        # for qt_pos, qt_s in itertools.product(grid_values, grid_values):
+        #     if controller_type == 'CAMPCC':
+        #         study.enqueue_trial({"qt_s": qt_s, "qt_v": qt_pos})
+        #     else:
+        #         study.enqueue_trial({"qt_s": qt_pos, "qt_pos": qt_s})
+
+        # print(f"Enqueued {len(study.get_trials(deepcopy=False))} predefined trials (4x4 grid).")
 
 
 
-        # pre-load initial guess as first trial
-        for i in range(n_startup_trials):
-            #for i in tqdm(range(n_startup_trials), desc="Iterations", position=1, leave=False, dynamic_ncols=True):
-            #print('--------- trial ', i, '---------')
-            perturbed = copy.deepcopy(initial_guess)
-            for key in initial_guess:
-                # Add small Gaussian noise (std = 5% of range or fixed small amount)
-                noise = np.random.normal(loc=0.0, scale=0.01 * (10 if "qt" not in key else 1))
-                # show key and noise
-                #print(f"Perturbing {key} by noise: {noise:.2f}")
-                perturbed[key] = max(0.0, initial_guess[key] + noise)  # enforce non-negative
-            study.enqueue_trial(perturbed)
+
+        # # define initial guess
+        # if controller_type == 'MPCCPP':
+        #     previous_study_name = previous_study_name_MPCCPP
+        #     previous_storage_name = previous_storage_name_MPCCPP
+        # elif controller_type == 'CAMPCC':
+        #     previous_study_name = previous_study_name_CAMPCC
+        #     previous_storage_name = previous_storage_name_CAMPCC
+
+        # initial_guess = produce_initial_guess(controller_type, previous_study_name, previous_storage_name)
+
+        # # # pre-load initial guess as first trial
+        # for i in range(n_startup_trials):
+        #     #for i in tqdm(range(n_startup_trials), desc="Iterations", position=1, leave=False, dynamic_ncols=True):
+        #     #print('--------- trial ', i, '---------')
+        #     perturbed = copy.deepcopy(initial_guess)
+        #     for key in initial_guess:
+        #         # Add small Gaussian noise (std = 5% of range or fixed small amount)
+        #         noise = np.random.normal(loc=0.0, scale=0.01 * (10 if "qt" not in key else 1))
+        #         # show key and noise
+        #         #print(f"Perturbing {key} by noise: {noise:.2f}")
+        #         perturbed[key] = max(0.0, initial_guess[key] + noise)  # enforce non-negative
+        #     study.enqueue_trial(perturbed)
 
 
         # inner bar for this study's trials
@@ -426,6 +519,10 @@ for time_horizon in time_horizon_vec:
 
 outer.close()
 
+
+
+# reset drone position after tuning
+reset_initial_position(GUI_client_simulator, track)
 
 
 # print message that we are done

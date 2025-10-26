@@ -1407,14 +1407,21 @@ class MPC_solver_handler(common_solver_parameters): # inherits from DART system 
 
             # produce problem as a dictionary for forces
             param_array = np.tile(params_i, (self.N + 1, 1)).ravel()
-
-            problem = {"xinit": xinit, "all_parameters": param_array} # all_parameters 
+            problem = {"xinit": xinit, "all_parameters": param_array}
             if len(X0) > 0:
                 # if initial guess is provided, add it to the problem
                 problem["x0"] = X0
 
-            # --- solve the problem ---
+            # # --- solve the problem ---
+            # if reinitialize_solver:
+            #     solver.xopt = None          # forget previous primal variables
+            #     solver.last_problem = None  # optional, depending on version
+            # else:
+            #     pass
+
+
             output, exitflag, info = solver.solve(problem)
+            
 
             if exitflag != 1:
                 print(f"Solver failed with status {exitflag}")

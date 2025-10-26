@@ -410,6 +410,10 @@ class MPCC_controller_class(path_handeling_utilities_class):
         # TEMPORARY
         self.origin_frame = 'map'  # "map" this is the frame where the path is defined, it is used to transform the path into the drone frame
 
+        # TEMPORARY
+        #decide if s will be evalauted in teh mpc copntrol loop or by the state callback function
+        self.s_eval_in_mpc_loop = False
+
         # Loop of the path
         #self.loop_path = True
 
@@ -531,8 +535,11 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         # varibles to print lap time
         self.lap_start_time = rospy.Time.now() 
+        self.s = 0
         self.previous_s = 0
-
+        self.xyz_closest_point = np.array([0.0,0.0,0.0])
+        self.previous_xyz_state = np.array([0.0,0.0,0.0])
+        
         # 
         self.safety_value = 0
 
@@ -611,6 +618,17 @@ class MPCC_controller_class(path_handeling_utilities_class):
     def drone_state_subscriber_callback(self, msg):
         #rospy.loginfo('Received drone state from subscriber')
         self.state = msg.data
+
+        # evaluate closest point on path (this is needed for tuning the MPC but can be switched off here (keep it in the mpc loop))
+        # find closest point on the path
+
+        xyz_state = msg.data[:3]
+        if self.s_eval_in_mpc_loop == False:
+            self.s, self.xyz_closest_point = self.s_evaluation(xyz_state)
+
+
+
+
 
     # callback for the safety value subscriber
     def safety_value_subscriber_callback(self, msg):
@@ -955,40 +973,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         return  marker_array
   
 
-
-
-
-    # The MPCC control loop (this is one iteration only so this need to be called multiple times in a while loop)
-    def run_one_mpc_control_loop(self, controller_type, time_horizon ,software_choice):
-
-        # select solver related objects
-        selected_solver_object = self.solver_objects_dict[controller_type][str(time_horizon)][software_choice]
-        solver_handler_obj = selected_solver_object["handler"]
-        solver = selected_solver_object["solver"]
-        solver_dt = selected_solver_object["dt"]
-
-        # also copy to self to keep track of things in testin envrironment
-        self.solver_handler_obj = solver_handler_obj
-        self.solver = solver
-
-
-        # copy the state so it can't chnge during the control loop
-        state = copy.deepcopy(self.state)  # copy the state to avoid modifying the original one
-        # print('yaw = ', state[8])
-        # # accumulate yaw rotations to avoid jumps
-        # if state[8] - self.previous_yaw > np.pi:
-        #     self.yaw_correction = self.yaw_correction - 2*np.pi
-        # elif state[8] - self.previous_yaw < -np.pi:
-        #     self.yaw_correction = self.yaw_correction + 2*np.pi
-        
-        # state[8] = state[8] + self.yaw_correction
-        # self.previous_yaw = self.state[8]
-        
-
-        # find closest point on the path
-        xyz_state = state[:3]
-        # evaluate velocity norm
-        v_norm = np.linalg.norm(state[3:6])
+    def s_evaluation(self,xyz_state):
         estimated_ds = 0.6 # this is the local area to look into finding closest point on path
         s, current_path_index, dist_to_centerline, xyz_closest_point = self.find_s_of_closest_point_on_global_path_3d( xyz_state, 
                                                         self.s_vals_global_path, 
@@ -997,7 +982,6 @@ class MPCC_controller_class(path_handeling_utilities_class):
                                                         self.z_vals_global_path,
                                                         self.previous_index, 
                                                         estimated_ds)
-
 
         # update index
         self.previous_path_index = current_path_index  # update index along the path to know where to search in next iteration
@@ -1015,6 +999,57 @@ class MPCC_controller_class(path_handeling_utilities_class):
             rospy.loginfo('Lap time: ' + str(round(lap_time.to_sec(), 2)) + ' seconds')
             self.lap_start_time = rospy.Time.now() 
         self.previous_s = s  # update s value to know where to search in next iteration
+        return s,xyz_closest_point
+
+
+    # The MPCC control loop (this is one iteration only so this need to be called multiple times in a while loop)
+    def run_one_mpc_control_loop(self, controller_type, time_horizon ,software_choice):
+        
+        # copy the state so it can't chnge during the control loop
+        state = copy.deepcopy(self.state)  # copy the state to avoid modifying the original one
+        # find closest point on the path
+        xyz_state = state[:3]
+
+        
+        # check if simulation has reset the initial position and regenerate the solver if that is the case (forces a solver reset)
+        D_state_norm = np.linalg.norm(state[:3] - self.previous_xyz_state)
+        self.previous_xyz_state = copy.deepcopy(np.array(state[:3]))
+        
+        if D_state_norm > 0.5:  # if the position has changed more than 1 meter, we assume the simulation has reset the position
+            #handler, solver, dt = self.produce_solver_handlers(controller_type, software_choice, time_horizon)
+            print("\n Significant change in drone position detected, resetting solver...")
+            print(f"Rebuilding solver_objects_dict entry:\n     controller: {controller_type},  "
+                        f"time_horizon: {time_horizon},  software: {software_choice}\n")
+
+            handler, solver, dt = self.produce_solver_handlers(controller_type, software_choice, time_horizon)
+            self.solver_objects_dict[controller_type][str(time_horizon)][software_choice] = {
+                "handler": handler,
+                "solver": solver,
+                "dt": dt
+            }
+
+        # load the solver object
+        selected_solver_object = self.solver_objects_dict[controller_type][str(time_horizon)][software_choice]
+        solver_handler_obj = selected_solver_object["handler"]
+        solver = selected_solver_object["solver"]
+        solver_dt = selected_solver_object["dt"]
+
+        # also copy to self to keep track of things in testin envrironment
+        self.solver_handler_obj = solver_handler_obj
+        self.solver = solver
+
+
+
+        # evaluate velocity norm
+        v_norm = np.linalg.norm(state[3:6])
+
+        if self.s_eval_in_mpc_loop:
+            s, xyz_closest_point = self.s_evaluation(xyz_state)
+        else:
+            s = copy.deepcopy(self.s)
+            xyz_closest_point = copy.deepcopy(self.xyz_closest_point)
+
+
 
 
         labels_x, labels_y, labels_z, labels_dxds, labels_dyds, labels_dzds, labels_d2xds2, labels_d2yds2, labels_d2zds2, labels_k,\
