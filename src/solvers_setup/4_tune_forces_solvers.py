@@ -36,8 +36,8 @@ os.chdir(dname)
 
 
 # select algorithm to tune
-MPC_algorithms = ['CAMPCC'] # 'MPCC' - 'CAMPCC' - 'MPCCPP'
-time_horizon_vec = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
+MPC_algorithms = ['MPCCPP','CAMPCC'] # 'MPCC' - 'CAMPCC' - 'MPCCPP'
+time_horizon_vec = [1.0,0.9, 0.8, 0.7, 0.6, 0.5] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
 software = 'forcespro'  # 'acados' or 'forcespro'
 
 optuna_studies_folder = 'optuna_studies'
@@ -55,8 +55,8 @@ elif CAMPCC_qtpos_flag == 2:
 
 
 # specify track you are training on (just for initial guess of parameters)
-track = "analytic_circle"
-# track = "vicon_racetrack"
+#track = "analytic_circle"
+track = "vicon_racetrack"
 
 rospy.init_node("optuna_node")  # Initialize the node
 pub_safety_value = rospy.Publisher('safety_value', Float32, queue_size=1)
@@ -72,7 +72,7 @@ n_trials = 100 # must be more than number startup trials for the sampler to work
 n_startup_trials = 50
 
 
-lane_violation_cost = 1
+lane_violation_cost = 0 # remove it for now
 lane_radius = 0.5
 
 # set up constant parameters
@@ -122,9 +122,9 @@ def reset_initial_position(GUI_client_simulator, track):
         GUI_client_simulator.update_configuration({"reset_state_y": -3.2})
         GUI_client_simulator.update_configuration({"reset_state_z": 1})
     elif track == "vicon_racetrack":
-        GUI_client_simulator.update_configuration({"reset_state_x": -2.88})
+        GUI_client_simulator.update_configuration({"reset_state_x": -2.4})
         GUI_client_simulator.update_configuration({"reset_state_y": -1.2})
-        GUI_client_simulator.update_configuration({"reset_state_z": 2.4})
+        GUI_client_simulator.update_configuration({"reset_state_z": 1.2})
     
     GUI_client_simulator.update_configuration({"reset_state": True})
     GUI_client_simulator.update_configuration({"reset_state_roll": 0.0})
@@ -229,7 +229,10 @@ def objective(trial, MPC_solver_handler_obj, track):
     lane_bound_penalty = 0
     time_limit = (optimal_lap_time)*max_laps*3.5
     prev_time = 0 # to evaluate dt for lane bound penalty
-    max_lane_penalty = 1 #
+    max_lane_penalty = 5 #
+    last_lap_increase = time.time() # this is needed against false lap crossing detections
+    delta_t_laps = 1 # minimum time between lap increases 
+
     #while lap_count <= max_laps and (time.time()-start_time_trial) < (optimal_lap_time)*max_laps*3.5: # protect against stalling
 
 
@@ -239,16 +242,19 @@ def objective(trial, MPC_solver_handler_obj, track):
         time_since_trial_start = (time.time()-start_time_trial)
         # --- explicit stop conditions ---
         if lap_count > max_laps:
+            #print("laps_completed, exiting")
             exit_reason = "laps_completed"
             break
 
         if time_since_trial_start >= time_limit:
+            #print("time_limit exceeded, exiting")
             exit_reason = "time_limit"
             break
         
-        if lane_bound_penalty > max_lane_penalty:
-            exit_reason = "lane_violation"
-            break
+        # if lane_bound_penalty > max_lane_penalty:
+        #     #print("lane_bound penalty exceeded")
+        #     exit_reason = "lane_violation"
+        #     break
 
 
 
@@ -266,15 +272,31 @@ def objective(trial, MPC_solver_handler_obj, track):
         #print(f"--- s_now: {s_1_now.data:.3f} | s_prev: {s_1_prev.data:.3f} ---")
 
 
-        if s_1_now.data < s_1_prev.data and started_timer==False:
-            started_timer = True
-            start_time = time.time()
-            lap_count += 1
-            #print("Lap completed: ", lap_count-1)
+        # if s_1_now.data < s_1_prev.data and started_timer==False:
+        #     started_timer = True
+        #     start_time = time.time()
+        #     lap_count += 1
         
-        elif s_1_now.data - s_1_prev.data < -10 and started_timer==True:
-            lap_count += 1
-            #print("Lap completed: ", lap_count-1)
+        # elif s_1_now.data - s_1_prev.data < -10 and started_timer==True:
+        #     lap_count += 1
+        #     print("Lap completed: ", lap_count-1)
+        #print(s_1_now.data - s_1_prev.data)
+        if s_1_now.data - s_1_prev.data < -1:
+            if lap_count == 0: # first lap
+                started_timer = True
+                start_time = time.time()
+                lap_count += 1
+            else:
+                if time.time() - last_lap_increase > delta_t_laps: #this protects against jittering over the line and counting multiple laps
+                    lap_count += 1
+                    last_lap_increase = time.time()
+                    print("Lap completed: ", lap_count-1)
+
+
+            
+        
+
+
         # update the previous value
         s_1_prev = s_1_now
         # print started_timer
@@ -282,18 +304,22 @@ def objective(trial, MPC_solver_handler_obj, track):
         if started_timer:
             elapsed_time = time.time() - start_time
             distance_from_centerline_now = rospy.wait_for_message("/distance_from_centerline", Float32)
-
-            dt = time.time() - prev_time
-            prev_time = time.time()
-            if distance_from_centerline_now.data > lane_radius:
-                lane_bound_penalty += (distance_from_centerline_now.data - lane_radius) * dt
+            if distance_from_centerline_now.data > lane_radius * 1.25:
+                exit_reason = "lane_violation"
+                break
+            # dt = time.time() - prev_time
+            # prev_time = time.time()
+            # if distance_from_centerline_now.data > lane_radius:
+            #     lane_bound_penalty += lane_bound_penalty * (distance_from_centerline_now.data - lane_radius) * dt
 
     # set safety to 0 immediately after the trial is completed
     pub_safety_value.publish(0.0)
 
-
-    if elapsed_time < optimal_lap_time*0.5 and started_timer == True:  # something went wrong, like exited lane or some strange behavior
-        exit_reason = "too_fast"
+    if exit_reason == 'laps_completed': # check if too fast
+        if elapsed_time < optimal_lap_time*0.5 and started_timer == True:  # something went wrong, like exited lane or some strange behavior
+            #print("optimal_lap time: ",optimal_lap_time)
+            #print("elapsed time: ",elapsed_time)
+            exit_reason = "too_fast"
 
 
     # print extit reason

@@ -402,9 +402,9 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
 
         ## SELECT THE TRACK ##
-        track_choice = 'analytic_circle'
+        #track_choice = 'analytic_circle'
         #track_choice = 'spline_circle'
-        #track_choice = 'vicon_racetrack'
+        track_choice = 'vicon_racetrack'
 
 
         # TEMPORARY

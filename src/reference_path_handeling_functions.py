@@ -18,7 +18,7 @@ def produce_track(choice,n_checkpoints):
 
     # tridimentional spline tracks, each tangent vector is defined at the extremity of the spline and represent the gate through which the drone must pass
     if choice == 'analytic_circle':
-        import numpy as np
+        
 
         # --- circle params ---
         R = 3.0                 # radius
@@ -201,17 +201,17 @@ def produce_track(choice,n_checkpoints):
             spline6 = [t6, xp6, yp6, zp6, tg6_init]
 
             ## seventh spline ##
-            tg_val = tg_vals[6]
+            tg_val = tg_vals[6]*2
             t7 = [0, 1]
             xp7 = -2
             yp7 = -2
-            zp7 = 2
+            zp7 = 2.5
             tg7_init = [tg_val, 0, 0]
             spline7 = [t7, xp7, yp7, zp7, tg7_init]
 
             ## eight spline ##
             # define the points needed for the interpolation
-            tg_val = tg_vals[7]
+            tg_val = tg_vals[7] * 2
             a_7 = np.pi*1.25
             t8 = [0, 1]                               # t parameter of the spline
             xp8 = -2                                  # 1D data for X dimension
