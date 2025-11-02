@@ -521,7 +521,7 @@ def generate_path_data(track_choice, optimally_smoothed = False):
             dx_ds, dy_ds, dz_ds, d2x_ds2, d2y_ds2, d2z_ds2, k_vec,\
             roll_4_local_path, pitch_4_local_path, yaw_4_local_path, \
             wz_4_local_path, wx_4_local_path, \
-            gates, gates_s_global_path, time_optimal_trajectory_4_warmstart
+            gates, gates_s_global_path, time_optimal_trajectory_4_warmstart, optimal_lap_time
 
 
 def raw_track(track_choice, n_checkpoints):

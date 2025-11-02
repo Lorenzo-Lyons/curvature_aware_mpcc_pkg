@@ -457,7 +457,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.dx_ds, self.dy_ds, self.dz_ds, self.d2x_ds2, self.d2y_ds2, self.d2z_ds2, self.k_vec, \
         self.roll_4_local_path, self.pitch_4_local_path, self.yaw_4_local_path, \
         self.wz_4_local_path, self.wx_4_local_path,\
-        self.gates_coordinates, self.gates_s , self.time_optimal_trajectory_4_warmstart = generate_path_data(track_choice, load_optimally_smoothed_path)
+        self.gates_coordinates, self.gates_s , self.time_optimal_trajectory_4_warmstart, self.optimal_lap_time = generate_path_data(track_choice, load_optimally_smoothed_path)
 
         self.synchronous_sim = False
 
@@ -1045,7 +1045,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         D_state_norm = np.linalg.norm(state[:3] - self.previous_xyz_state)
         self.previous_xyz_state = copy.deepcopy(np.array(state[:3]))
         
-        if D_state_norm > 0.5:  # if the position has changed more than 1 meter, we assume the simulation has reset the position
+        if D_state_norm > 1:  # if the position has changed more than 1 meter, we assume the simulation has reset the position
             #handler, solver, dt = self.produce_solver_handlers(controller_type, software_choice, time_horizon)
             print("\n Significant change in drone position detected, resetting solver...")
             print(f"Rebuilding solver_objects_dict entry:\n     controller: {controller_type},  "

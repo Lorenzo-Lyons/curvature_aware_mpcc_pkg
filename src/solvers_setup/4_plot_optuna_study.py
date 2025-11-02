@@ -7,27 +7,35 @@ from dynamic_reconfigure.client import Client
 from solver_manager_classes import MPC_solver_handler
 import matplotlib.pyplot as plt
 import numpy as np
+import sys
+
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
 os.chdir(dname)
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(parent_dir)
+from reference_path_handeling_functions import generate_path_data
+
 
 plt.rcParams.update({'font.size': 30})
 
 
 
 # select algorithm to tune
-MPC_algorithms = ['MPCCPP'] #,,'CAMPCC_qtpos_tuned' 'CAMPCC_qtpos_tuned'   ,'CAMPCC_qtpos_tuned'','CAMPCC','CAMPCC_qtpos_from_MPCCPP', 'MPCC' - 'CAMPCC' - 'MPCCPP' - 'CAMPCC_qtpos_from_MPCCPP' - '"CAMPCC_qtpos_tuned"'
-time_horizon_vec = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
+MPC_algorithms = ['MPCCPP','CAMPCC_qtpos_tuned'] #,,'CAMPCC_qtpos_tuned' 'CAMPCC_qtpos_tuned'   ,'CAMPCC_qtpos_tuned'','CAMPCC','CAMPCC_qtpos_from_MPCCPP', 'MPCC' - 'CAMPCC' - 'MPCCPP' - 'CAMPCC_qtpos_from_MPCCPP' - '"CAMPCC_qtpos_tuned"'
+time_horizon_vec = [0.5] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
 software = 'forcespro'  # 'acados' or 'forcespro'
 
 optuna_studies_folder = 'optuna_studies'
 #track = "analytic_circle"
 track = "vicon_racetrack"
 
-if track == "analytic_circle":
-    optimal_lap_time = 3.919247413153508
-elif track == "vicon_racetrack":
-    optimal_lap_time = 8.3
+
+
+# get optimal lap time from the offline solution
+load_optimally_smoothed_path = True
+optimal_lap_time = generate_path_data(track, load_optimally_smoothed_path)[-1]
+
 
 
 # define colors fro plots

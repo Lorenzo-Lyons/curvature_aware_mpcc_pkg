@@ -10,10 +10,10 @@ from std_msgs.msg import Float32
 import copy
 import numpy as np
 import os
+import sys
 from solver_manager_classes import MPC_solver_handler
 from itertools import product
 from tqdm import tqdm
-
 
 
 
@@ -22,11 +22,13 @@ from tqdm import tqdm
 
 
 # change folder to where this script is located
-import os
+
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
 os.chdir(dname)
-
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(parent_dir)
+from reference_path_handeling_functions import generate_path_data
 
 
 # Because we tune the CAMPCC after the MPCCPP, we will now train one after the other
@@ -36,22 +38,34 @@ os.chdir(dname)
 
 
 # select algorithm to tune
-MPC_algorithms = ['MPCCPP'] # 'MPCC' - 'CAMPCC' - 'MPCCPP'
+MPC_algorithms = ['CAMPCC'] # 'MPCC' - 'CAMPCC' - 'MPCCPP'
 time_horizon_vec = [0.5] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
 software = 'forcespro'  # 'acados' or 'forcespro'
 
 optuna_studies_folder = 'optuna_studies'
 
 # training CAMPCC with qt_pos from  MPCCPP?
-CAMPCC_qtpos_flags = [1]  # 0 set to 0, 1 set to previous best qt_pos from MPCCPP, 2 leave free to tune
-
-
-
+CAMPCC_qtpos_flags = [2]  # 0 set to 0, 1 set to previous best qt_pos from MPCCPP, 2 leave free to tune
 
 
 # specify track you are training on (just for initial guess of parameters)
 #track = "analytic_circle"
 track = "vicon_racetrack"
+
+
+
+# get optimal lap time from the offline solution
+load_optimally_smoothed_path = True
+optimal_lap_time = generate_path_data(track, load_optimally_smoothed_path)[-1]
+
+
+
+
+
+
+
+
+
 
 rospy.init_node("optuna_node")  # Initialize the node
 pub_safety_value = rospy.Publisher('safety_value', Float32, queue_size=1)
@@ -167,17 +181,6 @@ config_simulator = GUI_client_simulator.get_configuration()
 #print(config_simulator)  # Print all available parameters
 config_mpc = GUI_mpc_node.get_configuration()
 #print(config_mpc)
-
-
-
-
-# # optimal_lap_timee = time_optimal_trajectory_4_warmstart[-1,15]  # last element is the total time of the optimal trajectory
-
-if track == "analytic_circle":
-    optimal_lap_time = 4
-elif track == "vicon_racetrack":
-    optimal_lap_time = 8.3
-
 
 
 
