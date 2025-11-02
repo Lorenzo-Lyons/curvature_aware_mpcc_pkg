@@ -14,7 +14,7 @@ os.chdir(path_to_built_solvers)
 # instantiate the solver maker object
 controller_type = ["CAMPCC"] # "MPCC", "MPCCPP","CAMPCC", "CAMPCC_EA", "CAMPCC_EA_2"
 software_choice = ["forcespro"]  # "acados", "forcespro"
-time_horizon_vec = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+time_horizon_vec = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 
 for controller in controller_type:
     for software in software_choice:

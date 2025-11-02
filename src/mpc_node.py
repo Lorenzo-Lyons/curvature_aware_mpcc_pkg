@@ -129,16 +129,35 @@ class path_handeling_utilities_class():
                                                 previous_index, 
                                                 estimated_ds):
         
+        # # min_ds = np.min(np.diff(s_vals_global_path))
+        # # estimated_index_jumps = math.ceil(estimated_ds / min_ds)
+        # # minimum_index_jumps = math.ceil(0.1 / min_ds)
+
+        # # if estimated_index_jumps < minimum_index_jumps:
+        # #     estimated_index_jumps = minimum_index_jumps
+
+        # # Delta_indexes = estimated_index_jumps * 3
+        # # start_i = previous_index - Delta_indexes
+        # # finish_i = previous_index + Delta_indexes
+
         min_ds = np.min(np.diff(s_vals_global_path))
+
+        # Estimated number of index jumps based on the expected arc-length change
         estimated_index_jumps = math.ceil(estimated_ds / min_ds)
+
+        # Minimum number of jumps you want to enforce
         minimum_index_jumps = math.ceil(0.1 / min_ds)
 
-        if estimated_index_jumps < minimum_index_jumps:
-            estimated_index_jumps = minimum_index_jumps
+        # Enforce minimum search width
+        estimated_index_jumps = max(estimated_index_jumps, minimum_index_jumps)
 
-        Delta_indexes = estimated_index_jumps * 3
-        start_i = previous_index - Delta_indexes
+        # Final window size (± around previous index)
+        Delta_indexes = estimated_index_jumps
+
+        # Search window around the previous index
+        start_i  = previous_index - Delta_indexes
         finish_i = previous_index + Delta_indexes
+
 
         # Wrap-around indexing logic
         if start_i < 0:
@@ -166,13 +185,24 @@ class path_handeling_utilities_class():
         local_index = np.argmin(distances)
         dist_to_state = math.dist([x_search_vector[local_index], y_search_vector[local_index], z_search_vector[local_index]], xyz_state)
 
+    
         if local_index == 0 or local_index == s_search_vector.size - 1 or dist_to_state > 1:
+            # if local_index == 0:
+            #     print("local_index == 0")
+
+            # if local_index == s_search_vector.size - 1:
+            #     print("local_index == last index")
+
+            # if dist_to_state > 1:
+            #     print(f"dist_to_state too large: {dist_to_state:.3f}")
+
             distances_full = np.array([
                 math.dist([x_vals_global_path[ii], y_vals_global_path[ii], z_vals_global_path[ii]], xyz_state)
                 for ii in range(s_vals_global_path.size)
             ])
             index = np.argmin(distances_full)
         else:
+            #find global index corresponding to the local index
             index = np.where(s_vals_global_path == s_search_vector[local_index])[0][0]
 
         s = float(s_vals_global_path[index])
@@ -419,7 +449,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
 
         # produce track related fixed quantities
         #self.generate_track(track_choice)
-        load_optimally_smoothed_path = False
+        load_optimally_smoothed_path = True
 
         self.s_vals_global_path, self.x_vals_global_path, self.y_vals_global_path, self.z_vals_global_path, \
         self.roll_global_path, self.pitch_global_path, self.yaw_global_path, \
@@ -528,7 +558,7 @@ class MPCC_controller_class(path_handeling_utilities_class):
         self.input_traj = []
 
         # initialize path relative variable necessary for local search of closest point on path
-        self.previous_index = 1
+        self.previous_path_index = 1
 
         # define rviz related topics
         self.set_up_topics_for_rviz()
@@ -980,14 +1010,14 @@ class MPCC_controller_class(path_handeling_utilities_class):
                                                         self.x_vals_global_path, 
                                                         self.y_vals_global_path, 
                                                         self.z_vals_global_path,
-                                                        self.previous_index, 
+                                                        self.previous_path_index, 
                                                         estimated_ds)
 
         # update index
         self.previous_path_index = current_path_index  # update index along the path to know where to search in next iteration
         
         self.s_publisher.publish(Float32(s)) # publish s for simulation purpouses
-        if dist_to_centerline > self.lane_radius:
+        if dist_to_centerline > self.lane_radius * 1.1:
             print('Warning! The drone is outside the lane boundaries! Distance from centerline:', round(dist_to_centerline,2), 'm')
         self.distance_from_centerline_publisher.publish(Float32(dist_to_centerline)) # publish distance from centerline for simulation purpouses    
         

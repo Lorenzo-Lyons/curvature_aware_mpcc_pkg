@@ -11,17 +11,19 @@ abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
 os.chdir(dname)
 
-plt.rcParams.update({'font.size': 20})
+plt.rcParams.update({'font.size': 30})
 
 
 
 # select algorithm to tune
-MPC_algorithms = ['MPCCPP','CAMPCC','CAMPCC_qtpos_from_MPCCPP','CAMPCC_qtpos_tuned'] # 'MPCC' - 'CAMPCC' - 'MPCCPP' - 'CAMPCC_qtpos_from_MPCCPP' - '"CAMPCC_qtpos_tuned"'
+MPC_algorithms = ['MPCCPP'] #,,'CAMPCC_qtpos_tuned' 'CAMPCC_qtpos_tuned'   ,'CAMPCC_qtpos_tuned'','CAMPCC','CAMPCC_qtpos_from_MPCCPP', 'MPCC' - 'CAMPCC' - 'MPCCPP' - 'CAMPCC_qtpos_from_MPCCPP' - '"CAMPCC_qtpos_tuned"'
 time_horizon_vec = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
 software = 'forcespro'  # 'acados' or 'forcespro'
 
 optuna_studies_folder = 'optuna_studies'
-track = "analytic_circle"
+#track = "analytic_circle"
+track = "vicon_racetrack"
+
 if track == "analytic_circle":
     optimal_lap_time = 3.919247413153508
 elif track == "vicon_racetrack":
@@ -50,16 +52,11 @@ for time_horizon, color in zip(time_horizon_vec, colors):
 
         # define study name
         study_name = os.path.join(optuna_studies_folder, "optuna_study_" + MPC_solver_handler_obj.solver_name_forcespro + '_' + track)
-        # if controller_type == 'CAMPCC_qtpos_from_MPCCPP':
-        #     # replace "CAMPCC" with "CAMPCC_qtpos_from_MPCCPP" in the study name
-        #     study_name = study_name.replace("CAMPCC", "CAMPCC_qtpos_from_MPCCPP")
-        # elif controller_type == 'CAMPCC_qtpos_tuned':
-        #     # replace "CAMPCC" with "CAMPCC_qtpos_tuned" in the study name
-        #     study_name = study_name.replace("CAMPCC", "CAMPCC_qtpos_tuned")
-
-        
         storage_name = os.path.join("sqlite:///", study_name + ".db")
-
+        # check if the study database exists
+        if not os.path.exists(study_name + ".db"):
+            print(f"Study database {study_name + '.db'} does not exist. Skipping...")
+            continue
         study = optuna.load_study(study_name=study_name, storage=storage_name)
 
         if controller_type == 'MPCCPP':
@@ -180,7 +177,7 @@ plt.ioff()
 
 
 
-lw = 2
+lw = 5
 color_pp = 'orangered'
 color_ca = 'dodgerblue'
 color_ca_mpcc = 'deepskyblue'
@@ -192,7 +189,7 @@ labels = ['MPCC++', 'rCA-MPCC', r'rCA-MPCC ($q^t_{pos}$ from MPCC++)', 'rCA-MPCC
 fig3, ax_lap_time = plt.subplots(figsize=(10, 4))
 
 # add horizontal line for optimal lap time
-ax_lap_time.axhline(y=optimal_lap_time, color='gray', linestyle='--',linewidth = lw ,label='Optimal Lap Time')
+ax_lap_time.axhline(y=optimal_lap_time, color='gray', linestyle='--',linewidth = lw ,label='Optimal')
 
 time_horizon_vec_flipped = list(reversed(time_horizon_vec))
 
@@ -243,19 +240,20 @@ for controller_type, color, label in zip(MPC_algorithms, colors, labels):
         color=color,
         label=label,
         linewidth = lw,
+        markersize=15
     )
 
 # add labels and legend
 ax_lap_time.set_xlabel("MPC Time Horizon [s]")
 ax_lap_time.set_ylabel(f"Lap Time [s]")
-ax_lap_time.legend()
-#ax_lap_time.set_ylim(0, 1.1 * max(best_lap_times ))
+ax_lap_time.legend(loc="upper left", bbox_to_anchor=(-0.015, 1.05),fontsize=25)
+#ax_lap_time.set_ylim(optimal_lap_time-0.1, 1.3 * max(best_lap_times ))
 
 # adjust subplots
 fig3.subplots_adjust(
 top=1.0,
-bottom=0.180,
-left=0.1,
+bottom=0.245,
+left=0.13,
 right=0.995,
 hspace=0.2,
 wspace=0.2
@@ -263,6 +261,7 @@ wspace=0.2
 
 # use the horizon length as x ticks
 ax_lap_time.set_xticks(time_horizon_vec_flipped)
+ax_lap_time.set_yticks([np.linspace(3.9,4.3,5) if track == "analytic_circle" else np.linspace(8,15,8)][0])
 ax_lap_time.invert_xaxis()
 
 plt.show()

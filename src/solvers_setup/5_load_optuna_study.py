@@ -4,6 +4,7 @@ import optuna
 import rospy
 from std_msgs.msg import Float32
 from dynamic_reconfigure.client import Client
+from solver_manager_classes import MPC_solver_handler
 
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
@@ -11,9 +12,48 @@ os.chdir(dname)
 
 
 
-optuna_studies_folder = 'optuna_tudies_th_1_circle'
+optuna_studies_folder = 'optuna_studies'
+
+# select algorithm to tune
+controller_type = 'MPCCPP' # 'MPCC' - 'CAMPCC' - 'MPCCPP'
+time_horizon = 0.5 # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
+software = 'forcespro'  # 'acados' or 'forcespro'
+track = "vicon_racetrack" # "vicon_racetrack", 'analytic_circle'
+# training CAMPCC with qt_pos from  MPCCPP?
+CAMPCC_qtpos_flag = 2
 
 
+
+
+
+
+# define study name
+if CAMPCC_qtpos_flag == 0:
+    CAMPCC_qt_pos_name_tag = "CAMPCC"
+elif CAMPCC_qtpos_flag == 1:
+    CAMPCC_qt_pos_name_tag = "CAMPCC_qtpos_from_MPCCPP"
+elif CAMPCC_qtpos_flag == 2:
+    CAMPCC_qt_pos_name_tag = "CAMPCC_qtpos_tuned"
+
+# define MPC algorithm and time horizon in the GUI
+MPC_solver_handler_obj = MPC_solver_handler(controller_type,time_horizon,software)
+
+# define study name and storage
+study_name = os.path.join(optuna_studies_folder, "optuna_study_" + MPC_solver_handler_obj.solver_name_forcespro + '_' + track)
+if controller_type == 'CAMPCC' and CAMPCC_qt_pos_name_tag != "":
+    # replace "CAMPCC" with the tag
+    study_name = study_name.replace("CAMPCC", CAMPCC_qt_pos_name_tag)
+
+storage_name = os.path.join("sqlite:///", study_name + ".db")
+study = optuna.load_study(study_name=study_name, storage=storage_name)
+
+# Print best parameters found so far
+print("Best parameters:", study.best_params)
+print("Best value:", study.best_value)
+
+# visualize the optimization history
+#optuna.visualization.plot_optimization_history(study).show()
+#optuna.visualization.plot_param_importances(study).show()
 
 
 
@@ -23,6 +63,7 @@ if assign_to_GUI:
     print('Will assign best parameters to the GUI')
     rospy.init_node("assign_optuna_paramters_node")  # Initialize the node
     GUI_mpc_node = Client("/mpc_node", timeout=1)
+
     # set up constant parameters
     GUI_mpc_node.update_configuration({"lane_radius": 0.5})
     GUI_mpc_node.update_configuration({"local_path_length": 6})
@@ -35,53 +76,26 @@ if assign_to_GUI:
     GUI_mpc_node.update_configuration({"q_roll_pitch": 0.1})
     GUI_mpc_node.update_configuration({"q_yaw": 0.1})
     GUI_mpc_node.update_configuration({"q_lag": 100.0})
-    #GUI_mpc_node.update_configuration({"qt_s": 100.0})
 
-
-
-
-
-
-
-MPC_algorithm = 'CAMPCC' # 'MPCC' - 'CAMPCC' - 'MPCCPP'
-# load the study from the database
-
-
-# save study
-study_name = optuna_studies_folder + "/optuna_study_results_ROS_" + MPC_algorithm
-storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
-
-
-print('loading GUI parameters from: ', study_name)
-
-
-
-study = optuna.load_study(study_name=study_name, storage=storage_name)
-
-
-
-# Print best parameters found so far
-print("Best parameters:", study.best_params)
-print("Best value:", study.best_value)
-
-# visualize the optimization history
-#optuna.visualization.plot_optimization_history(study).show()
-#optuna.visualization.plot_param_importances(study).show()
 
 
 
 # -------------------------------------------
 # Assign best parameters to the GUI
-if MPC_algorithm == 'MPCC':
+if controller_type == 'MPCC':
     algorithm_number = 0
-elif MPC_algorithm == 'CAMPCC':
+elif controller_type == 'CAMPCC':
     algorithm_number = 1
-elif MPC_algorithm == 'MPCCPP':
+elif controller_type == 'MPCCPP':
     algorithm_number = 2
 
 # set GUI params
 if assign_to_GUI:
     GUI_mpc_node.update_configuration({"controller_type": algorithm_number})
+    GUI_mpc_node.update_configuration({"time_horizon": MPC_solver_handler_obj.time_horizon})
+
+
+
 
 params_2_load = study.best_params
 

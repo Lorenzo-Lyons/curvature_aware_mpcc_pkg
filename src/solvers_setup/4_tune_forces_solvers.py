@@ -36,22 +36,17 @@ os.chdir(dname)
 
 
 # select algorithm to tune
-MPC_algorithms = ['MPCCPP','CAMPCC'] # 'MPCC' - 'CAMPCC' - 'MPCCPP'
-time_horizon_vec = [1.0,0.9, 0.8, 0.7, 0.6, 0.5] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
+MPC_algorithms = ['MPCCPP'] # 'MPCC' - 'CAMPCC' - 'MPCCPP'
+time_horizon_vec = [0.5] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
 software = 'forcespro'  # 'acados' or 'forcespro'
 
 optuna_studies_folder = 'optuna_studies'
 
 # training CAMPCC with qt_pos from  MPCCPP?
-CAMPCC_qtpos_flag = 2  # 0 set to 0, 1 set to previous best qt_pos from MPCCPP, 2 leave free to tune
+CAMPCC_qtpos_flags = [1]  # 0 set to 0, 1 set to previous best qt_pos from MPCCPP, 2 leave free to tune
 
 
-if CAMPCC_qtpos_flag == 0:
-    CAMPCC_qt_pos_name_tag = "CAMPCC"
-elif CAMPCC_qtpos_flag == 1:
-    CAMPCC_qt_pos_name_tag = "CAMPCC_qtpos_from_MPCCPP"
-elif CAMPCC_qtpos_flag == 2:
-    CAMPCC_qt_pos_name_tag = "CAMPCC_qtpos_tuned"
+
 
 
 # specify track you are training on (just for initial guess of parameters)
@@ -66,14 +61,15 @@ pub_safety_value = rospy.Publisher('safety_value', Float32, queue_size=1)
 GUI_client_simulator = Client("/drone_simulator_node", timeout=5)  
 GUI_mpc_node = Client("/mpc_node", timeout=5) 
 
-max_laps = 1
+max_laps = 3
 
 n_trials = 100 # must be more than number startup trials for the sampler to work well
-n_startup_trials = 50
+n_startup_trials = 33
 
 
-lane_violation_cost = 0 # remove it for now
+lane_violation_cost = 1 
 lane_radius = 0.5
+admissible_lane_violation = 1.5 * lane_radius # this value will abort the whole trail, it saves from spectacualr failure
 
 # set up constant parameters
 GUI_mpc_node.update_configuration({"lane_radius": lane_radius})
@@ -87,32 +83,7 @@ GUI_mpc_node.update_configuration({"q_thrust": 0.1})
 GUI_mpc_node.update_configuration({"q_roll_pitch": 0.1})
 GUI_mpc_node.update_configuration({"q_yaw": 0.1})
 GUI_mpc_node.update_configuration({"q_lag": 100.0})
-#GUI_mpc_node.update_configuration({"qt_s": 100.0})
 
-# # define initial parameter guess for optuna
-# def produce_initial_guess(controller_type, previous_study_name, previous_storage_name):
-#     # check if previous study exists
-#     # if previous_study_name != [] and previous_storage_name != []:
-#     #     #print('Previous study found for longer time horizon, using as initial guess.')
-#     #     #print('loading initial guess from: ', previous_study_name)
-#     #     study = optuna.load_study(study_name=previous_study_name, storage=previous_storage_name)
-#     #     initial_guess = {}
-#     #     for key, value in study.best_params.items():
-#     #         initial_guess[key] = value
-#     #else:
-#     initial_guess = {
-#     "qt_s": 10.0,
-#     "qt_pos": 10.0,
-#     }
-
-#     if controller_type == "CAMPCC":
-#         initial_guess = {
-#         "qt_s": 10.0,
-#         "qt_v": 0.1,
-#         }
-
-
-#     return initial_guess
 
     
 
@@ -135,13 +106,16 @@ def set_mpc_node_GUI(trial,GUI_mpc_node, MPC_solver_handler_obj,CAMPCC_qtpos_fla
     # algorithm specific parameters
     controller_type = MPC_solver_handler_obj.controller_type
 
+    max_qt_s = 1 if track == "vicon_racetrack" else 100
+    min_qt_s = 0.01 if track == "vicon_racetrack" else 1
+
     if controller_type == 'MPCC' or controller_type == 'MPCCPP':
-        qt_s = trial.suggest_float("qt_s", 1, 100, log=False) 
+        qt_s = trial.suggest_float("qt_s", min_qt_s, max_qt_s, log=True) 
         qt_pos = trial.suggest_float("qt_pos", 1, 100, log=False) #0.1
         qt_v = 0
 
     elif controller_type == 'CAMPCC':
-        qt_s = trial.suggest_float("qt_s", 1, 100, log=False)
+        qt_s = trial.suggest_float("qt_s", min_qt_s, max_qt_s, log=True)
         qt_v = trial.suggest_float("qt_v", 0.1, 100, log=False) 
         if CAMPCC_qtpos_flag == 0:
             qt_pos = 0
@@ -226,16 +200,11 @@ def objective(trial, MPC_solver_handler_obj, track):
     started_timer = False
     elapsed_time = 0
     start_time_trial = time.time()
-    lane_bound_penalty = 0
+    lane_bound_penalty = 0 # this will accumelate lane violation cost
     time_limit = (optimal_lap_time)*max_laps*3.5
-    prev_time = 0 # to evaluate dt for lane bound penalty
-    max_lane_penalty = 5 #
     last_lap_increase = time.time() # this is needed against false lap crossing detections
     delta_t_laps = 1 # minimum time between lap increases 
-
-    #while lap_count <= max_laps and (time.time()-start_time_trial) < (optimal_lap_time)*max_laps*3.5: # protect against stalling
-
-
+    prev_time = time.time()
 
     while True:
         #now = time.time()
@@ -251,12 +220,6 @@ def objective(trial, MPC_solver_handler_obj, track):
             exit_reason = "time_limit"
             break
         
-        # if lane_bound_penalty > max_lane_penalty:
-        #     #print("lane_bound penalty exceeded")
-        #     exit_reason = "lane_violation"
-        #     break
-
-
 
         # wait 2 s before activating the controller
         if time.time() - start_time_trial > 1:
@@ -266,21 +229,7 @@ def objective(trial, MPC_solver_handler_obj, track):
 
         # read most recent message from s_1 topic
         s_1_now = rospy.wait_for_message("/s", Float32)
-        # chek if the lap was completed
 
-        # TEMPORARY PRINTING of current and previous s values with 3 decimals
-        #print(f"--- s_now: {s_1_now.data:.3f} | s_prev: {s_1_prev.data:.3f} ---")
-
-
-        # if s_1_now.data < s_1_prev.data and started_timer==False:
-        #     started_timer = True
-        #     start_time = time.time()
-        #     lap_count += 1
-        
-        # elif s_1_now.data - s_1_prev.data < -10 and started_timer==True:
-        #     lap_count += 1
-        #     print("Lap completed: ", lap_count-1)
-        #print(s_1_now.data - s_1_prev.data)
         if s_1_now.data - s_1_prev.data < -1:
             if lap_count == 0: # first lap
                 started_timer = True
@@ -293,62 +242,47 @@ def objective(trial, MPC_solver_handler_obj, track):
                     print("Lap completed: ", lap_count-1)
 
 
-            
-        
-
-
         # update the previous value
         s_1_prev = s_1_now
-        # print started_timer
-        #print("started_timer: ", started_timer)
+
         if started_timer:
             elapsed_time = time.time() - start_time
             distance_from_centerline_now = rospy.wait_for_message("/distance_from_centerline", Float32)
-            if distance_from_centerline_now.data > lane_radius * 1.25:
+
+            # if mega lane violation, exit
+            if distance_from_centerline_now.data > admissible_lane_violation:
                 exit_reason = "lane_violation"
                 break
-            # dt = time.time() - prev_time
-            # prev_time = time.time()
-            # if distance_from_centerline_now.data > lane_radius:
-            #     lane_bound_penalty += lane_bound_penalty * (distance_from_centerline_now.data - lane_radius) * dt
+
+            # else penalise it
+            dt = time.time() - prev_time
+            prev_time = time.time()
+            if distance_from_centerline_now.data > lane_radius:
+                lane_bound_penalty += lane_violation_cost * (distance_from_centerline_now.data - lane_radius) * dt
+
 
     # set safety to 0 immediately after the trial is completed
     pub_safety_value.publish(0.0)
 
     if exit_reason == 'laps_completed': # check if too fast
-        if elapsed_time < optimal_lap_time*0.5 and started_timer == True:  # something went wrong, like exited lane or some strange behavior
-            #print("optimal_lap time: ",optimal_lap_time)
-            #print("elapsed time: ",elapsed_time)
+        if elapsed_time < max_laps*optimal_lap_time*0.85 and started_timer == True:  # something went wrong, like exited lane or some strange behavior
             exit_reason = "too_fast"
 
 
-    # print extit reason
-    #print('Exit reason: ', exit_reason)
-
-    # if elapsed_time < 6 * max_laps or distance_from_centerline_now.data - lane_width/2 > lane_width/2: # something went wrong, like exited lane or some strange behavior
-    #     print('Trial aborted due to too short lap time or too large lane violation')
-    #     elapsed_time = 35
-
-    
-    #print('Elapsed time: ', elapsed_time)
-    #print('Lane bound penalty: ', lane_bound_penalty)
-    objective_value = elapsed_time #+ lane_bound_penalty
-
-
-    # if exit_reason == "too":  # something went wrong, like exited lane or some strange behavior
-    #     print('Trial aborted, completed laps too quickly.')
-    #     objective_value = optimal_lap_time*max_laps*3.0 # assigning high penalty
-    # elif exit_reason == "time_limit":
-    #     print('Trial aborted, time limit reached (going too slow).')
-    #     objective_value = optimal_lap_time*max_laps*3.0
-    # elif lane_bound_penalty >
 
     if exit_reason == "laps_completed":
         #print('Trial completed successfully.')
-        pass
+        print('average time: ', elapsed_time/max_laps)
+        print('Lane bound penalty: ', lane_bound_penalty)
+        objective_value = elapsed_time/max_laps + lane_bound_penalty
     else:
         print('Trial aborted due to: ' + exit_reason)
-        objective_value = optimal_lap_time*max_laps*3.0
+        objective_value = optimal_lap_time*max_laps*3.0 + lane_bound_penalty # adding lane penalty to help the solver distinguish
+
+
+    # store time data and lane penalty data
+    trial.set_user_attr("average_time", elapsed_time/max_laps)
+    trial.set_user_attr("lane_bound_penalty", lane_bound_penalty)
 
 
     return objective_value
@@ -387,25 +321,6 @@ previous_storage_name_CAMPCC = []
 
 
 
-# all this parafenallia is just to have a progress bar that works well with rospy
-
-# # helper so you can keep using `log()` instead of `print()`
-# log = tqdm.write
-
-# pairs = list(product(time_horizon_vec, MPC_algorithms))
-
-# for time_horizon, controller_type in tqdm(
-#     pairs,
-#     total=len(pairs),
-#     desc="Full tuning progress",
-#     dynamic_ncols=True,
-#     leave=True,          # keep the bar after completion
-#     position=0
-# ):
-#     # logs that don't disturb the bar:
-#     log("\n" + "─" * 50)
-#     MPC_solver_handler_obj = MPC_solver_handler(controller_type, time_horizon, software)
-#     log(f"Tuning algorithm: {MPC_solver_handler_obj.solver_name_forcespro}")
 
 
 print('')
@@ -417,13 +332,16 @@ outer = tqdm(total=len(time_horizon_vec) * len(MPC_algorithms),
              desc="Overall progress", position=0, leave=True, dynamic_ncols=True)
 
 for time_horizon in time_horizon_vec:
-    for controller_type in MPC_algorithms:
-        
+    for controller_type, CAMPCC_qtpos_flag in zip(MPC_algorithms,CAMPCC_qtpos_flags):  # add a dummy flag if training MPCCPP
+        if CAMPCC_qtpos_flag == 0:
+            CAMPCC_qt_pos_name_tag = "CAMPCC"
+        elif CAMPCC_qtpos_flag == 1:
+            CAMPCC_qt_pos_name_tag = "CAMPCC_qtpos_from_MPCCPP"
+        elif CAMPCC_qtpos_flag == 2:
+            CAMPCC_qt_pos_name_tag = "CAMPCC_qtpos_tuned"
+
         # define MPC algorithm and time horizon in the GUI
         MPC_solver_handler_obj = MPC_solver_handler(controller_type,time_horizon,software)
-        #print('_________________________________________________')
-        #print('Tuning algorithm: ', MPC_solver_handler_obj.solver_name_forcespro)
-
 
         # define study name and storage
         study_name = os.path.join(optuna_studies_folder, "optuna_study_" + MPC_solver_handler_obj.solver_name_forcespro + '_' + track)
@@ -432,62 +350,21 @@ for time_horizon in time_horizon_vec:
             study_name = study_name.replace("CAMPCC", CAMPCC_qt_pos_name_tag)
         
         storage_name = os.path.join("sqlite:///", study_name + ".db")
-        #study_name = optuna_studies_folder +"/optuna_study_results_ROS_" + controller_type
-        #storage_name = "sqlite:///" + study_name + ".db"  # SQLite database file
-        
-        # create fresh sampler
-        #sampler = BoTorchSampler(n_startup_trials=n_startup_trials)  # GP starts after 5 random trials
 
-        import itertools
-        import optuna
-
-        # Create a 4x4 grid of values  (for initialization on uniform grid)
-        grid_values = [20, 40, 60, 80]
-
-        # # Define the sampler (your config)
-        # sampler = optuna.samplers.TPESampler(
-        #     gamma=lambda n: min(50, int(0.3 * n)),
-        #     consider_prior=True,
-        #     prior_weight=50.0,
-        #     consider_magic_clip=True,
-        #     consider_endpoints=False,
-        #     n_startup_trials=n_startup_trials, 
-        #     n_ei_candidates=50,
-        #     multivariate=False,
-        #     group=False,
-        #     warn_independent_sampling=True,
-        #     seed=None,
-        # )
-
-        # # WIDE SEARCH PARAMETERS
-        # sampler = optuna.samplers.TPESampler(
-        #     # Let TPE choose its well-tested default gamma: ~min(25, n/4)
-        #     consider_prior=True,
-        #     prior_weight=1.0,              # lower the smoothing
-        #     consider_magic_clip=True,
-        #     consider_endpoints=True,       # allow boundary exploration
-        #     n_startup_trials=n_startup_trials, # rule of thumb: ~5–10 per dim (use your D)
-        #     n_ei_candidates=400,           # more candidates -> better EI search
-        #     multivariate=True,             # model interactions
-        #     warn_independent_sampling=True,
-        #     seed=0,                        # make behavior reproducible for debugging
-        # )
 
         # 
         sampler = optuna.samplers.TPESampler(
             # Let TPE choose its well-tested default gamma: ~min(25, n/4)
             consider_prior=True,
-            prior_weight=10.0,              # lower the smoothing
+            prior_weight=0.1,              # lower the smoothing
             consider_magic_clip=True,
             consider_endpoints=True,       # allow boundary exploration
             n_startup_trials=n_startup_trials, # rule of thumb: ~5–10 per dim (use your D)
-            n_ei_candidates=50,           # more candidates -> better EI search
+            n_ei_candidates=100,           # more candidates -> better EI search
             multivariate=True,             # model interactions
             warn_independent_sampling=True,
             seed=0,                        # make behavior reproducible for debugging
         )
-
-
 
 
         study = optuna.create_study(
@@ -497,41 +374,20 @@ for time_horizon in time_horizon_vec:
             load_if_exists=True,
             sampler=sampler
         )
-
-        # # --- enqueue the 4x4 grid of predefined parameter combinations ---
-        # for qt_pos, qt_s in itertools.product(grid_values, grid_values):
-        #     if controller_type == 'CAMPCC':
-        #         study.enqueue_trial({"qt_s": qt_s, "qt_v": qt_pos})
-        #     else:
-        #         study.enqueue_trial({"qt_s": qt_pos, "qt_pos": qt_s})
-
-        # print(f"Enqueued {len(study.get_trials(deepcopy=False))} predefined trials (4x4 grid).")
+        # define some warm start parameters to start from a feasible region
 
 
+        qt_s_startup_vals = [0.1, 0.2, 0.3, 0.4, 0.5]
+        # queue them BEFORE study.optimize
+        for qt_s_startup_val in qt_s_startup_vals:
+            print(f'Enqueuing startup trial with qt_s = {qt_s_startup_val:.2f}, qt_pos = 100, (qt_v=0 if applicable)', )
+            startup_params_i = {"qt_s": qt_s_startup_val, "qt_pos": 100}
+            # if controller is CAMPCC and we are training qt_pos, add it to the startup params
+            if controller_type == 'CAMPCC':
+                # add qt_v = 0
+                startup_params_i["qt_v"] = 0.0
 
-
-        # # define initial guess
-        # if controller_type == 'MPCCPP':
-        #     previous_study_name = previous_study_name_MPCCPP
-        #     previous_storage_name = previous_storage_name_MPCCPP
-        # elif controller_type == 'CAMPCC':
-        #     previous_study_name = previous_study_name_CAMPCC
-        #     previous_storage_name = previous_storage_name_CAMPCC
-
-        # initial_guess = produce_initial_guess(controller_type, previous_study_name, previous_storage_name)
-
-        # # # pre-load initial guess as first trial
-        # for i in range(n_startup_trials):
-        #     #for i in tqdm(range(n_startup_trials), desc="Iterations", position=1, leave=False, dynamic_ncols=True):
-        #     #print('--------- trial ', i, '---------')
-        #     perturbed = copy.deepcopy(initial_guess)
-        #     for key in initial_guess:
-        #         # Add small Gaussian noise (std = 5% of range or fixed small amount)
-        #         noise = np.random.normal(loc=0.0, scale=0.01 * (10 if "qt" not in key else 1))
-        #         # show key and noise
-        #         #print(f"Perturbing {key} by noise: {noise:.2f}")
-        #         perturbed[key] = max(0.0, initial_guess[key] + noise)  # enforce non-negative
-        #     study.enqueue_trial(perturbed)
+            study.enqueue_trial(startup_params_i, skip_if_exists=True)  # avoids duplicates if you re-run
 
 
         # inner bar for this study's trials
@@ -546,11 +402,6 @@ for time_horizon in time_horizon_vec:
             # inner.set_postfix(value=f"{trial.value:.3g}" if trial.value is not None else "—",
             #                   state=str(trial.state).split('.')[-1])
 
-
-
-        # perform the optimization
-        #study.optimize(lambda trial: objective(trial, MPC_solver_handler_obj, track),n_trials=n_trials)
-        # run the study with the callback
         study.optimize(lambda t: objective(t, MPC_solver_handler_obj, track),
                        n_trials=n_trials,
                        callbacks=[_pb_callback])
@@ -559,8 +410,6 @@ for time_horizon in time_horizon_vec:
         
 
         
-        #study.optimize(objective, n_trials=n_trials)
-        #print("Best hyperparameters:", study.best_params)
         study.trials_dataframe().to_csv(study_name)
 
 

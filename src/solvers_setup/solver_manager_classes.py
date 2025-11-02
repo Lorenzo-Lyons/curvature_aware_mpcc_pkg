@@ -1004,7 +1004,21 @@ class MPC_solver_handler(common_solver_parameters): # inherits from DART system 
             #j = - qt_s * ((s/local_path_length)**2 + s/local_path_length) + qt_v * denominator**2
             #j = - qt_s * (s - 0.9 * denominator)/local_path_length  
             j = j + qt_v * denominator_corrected**2
-            
+
+            # labels_x, labels_y, labels_z, labels_dxds, labels_dyds, labels_dzds,\
+            # labels_d2x_ds2, labels_d2y_ds2, labels_d2z_ds2, labels_k = self.unpack_parameters_CAMPCC(p)
+            # ref_d2x_ds2 = self.evaluate_kernelized_line_reg(s, local_path_length, labels_d2x_ds2)
+            # ref_d2y_ds2 = self.evaluate_kernelized_line_reg(s, local_path_length, labels_d2y_ds2)
+            # ref_d2z_ds2 = self.evaluate_kernelized_line_reg(s, local_path_length, labels_d2z_ds2)
+            # R = (ref_d2x_ds2**2 + ref_d2y_ds2**2 + ref_d2z_ds2**2+0.001)**0.5 # using the direct k value
+            # p_projected_r = (pos_x - ref_x) * ref_d2x_ds2/R + (pos_y - ref_y) * ref_d2y_ds2/R + (pos_z - ref_z) * ref_d2z_ds2/R
+            # # denominator = (1 - p_projected_r * k)
+            # # denominator_corrected = self.soft_min(denominator, 0.1)
+            # #projection_ratio = 1 / denominator_corrected
+            # #j = - qt_s * ((s/local_path_length)**2 + s/local_path_length) + qt_v * denominator**2
+            # #j = - qt_s * (s - 0.9 * denominator)/local_path_length  
+            # j = j - qt_v * p_projected_r
+
 
         return j
 

@@ -11,13 +11,13 @@ sys.path.append(os.path.join(pkg_path, 'src'))
 from reference_path_handeling_functions import generate_path_data  # noqa
 
 # select track 
-#track_choice = 'vicon_racetrack'
+track_choice = 'vicon_racetrack'
 #track_choice = 'spline_circle'
-track_choice = 'analytic_circle'
+#track_choice = 'analytic_circle'
 
 
 # load optimally generated path data
-load_optimally_smoothed_path = False
+load_optimally_smoothed_path = True
 
 s_vals_global_path, x_vals_global_path, y_vals_global_path, z_vals_global_path,\
 roll_global_path, pitch_global_path, yaw_global_path, \
