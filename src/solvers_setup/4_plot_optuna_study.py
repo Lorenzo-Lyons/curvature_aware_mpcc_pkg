@@ -21,9 +21,9 @@ plt.rcParams.update({'font.size': 30})
 
 
 
-# select algorithm to tune
-MPC_algorithms = ['MPCCPP','CAMPCC_qtpos_tuned'] #,,'CAMPCC_qtpos_tuned' 'CAMPCC_qtpos_tuned'   ,'CAMPCC_qtpos_tuned'','CAMPCC','CAMPCC_qtpos_from_MPCCPP', 'MPCC' - 'CAMPCC' - 'MPCCPP' - 'CAMPCC_qtpos_from_MPCCPP' - '"CAMPCC_qtpos_tuned"'
-time_horizon_vec = [0.5] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
+# select algorithm to plot
+MPC_algorithms = ['MPCCPP'] #,,'CAMPCC_qtpos_tuned' 'CAMPCC_qtpos_tuned'   ,'CAMPCC_qtpos_tuned'','CAMPCC','CAMPCC_qtpos_from_MPCCPP', 'MPCC' - 'CAMPCC' - 'MPCCPP' - 'CAMPCC_qtpos_from_MPCCPP' - '"CAMPCC_qtpos_tuned"'
+time_horizon_vec = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
 software = 'forcespro'  # 'acados' or 'forcespro'
 
 optuna_studies_folder = 'optuna_studies'

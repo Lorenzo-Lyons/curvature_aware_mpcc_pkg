@@ -39,7 +39,7 @@ from reference_path_handeling_functions import generate_path_data
 
 # select algorithm to tune
 MPC_algorithms = ['CAMPCC'] # 'MPCC' - 'CAMPCC' - 'MPCCPP'
-time_horizon_vec = [0.5] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
+time_horizon_vec = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5] # start from longer horizons to shorter ones  , 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1
 software = 'forcespro'  # 'acados' or 'forcespro'
 
 optuna_studies_folder = 'optuna_studies'
